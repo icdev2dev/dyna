@@ -1,0 +1,16 @@
+[project]
+name = "dyna-py"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "baml-py>=0.205.0",
+    "fastmcp>=2.11.3",
+    "flask>=3.1.1",
+    "flask-cors>=6.0.1",
+    "lancedb>=0.24.3",
+    "openai>=1.99.9",
+    "pandas>=2.3.1",
+    "uuid>=1.30",
+]

@@ -1,0 +1,5 @@
+$d8873fc5-08e8-40d5-8ccd-8fc15c089768²ç+schema_name ÿÿÿÿÿÿÿÿÿ*string8Zdefault0attribute_name ÿÿÿÿÿÿÿÿÿ*string8Zdefault+	data_type ÿÿÿÿÿÿÿÿÿ*string8Zdefault)label ÿÿÿÿÿÿÿÿÿ*string08Zdefault(required ÿÿÿÿÿÿÿÿÿ*bool8Zdefault.
+ui_control ÿÿÿÿÿÿÿÿÿ*string08Zdefault/description ÿÿÿÿÿÿÿÿÿ*string08Zdefault1parent_schema ÿÿÿÿÿÿÿÿÿ*string08Zdefault2related_schema ÿÿÿÿÿÿÿÿÿ*string08Zdefault1relation_type	 ÿÿÿÿÿÿÿÿÿ*string08Zdefault=vector
+ ÿÿÿÿÿÿÿÿÿ*fixed_size_list:float:38408Zdefault"!
+lance.auto_cleanup.interval20"'
+lance.auto_cleanup.older_than14days

@@ -1,0 +1,86 @@
+<script> import Canvas from './Canvas.svelte'; 
+// Controller gets assigned by Canvas via bind:controller 
+let controller = null; 
+// Example schemas 
+const userSchema = [ 
+    { type: 'text', name: 'name', label: 'Name' }, { type: 'number', name: 'age', label: 'Age' }, { type: 'select', name: 'role', label: 'Role', options: ['User', 'Admin'] }, 
+    { type: 'checkbox', name: 'agree', label: 'Agree to terms' } ]; 
+const productSchema = [ { type: 'text', name: 'title', label: 'Title' }, 
+                        { type: 'number', name: 'price', label: 'Price' }, 
+                        { type: 'select', name: 'category', label: 'Category', options: ['A', 'B', 'C'] }, 
+                        { type: 'checkbox', name: 'active', label: 'Active' } ]; 
+// Track the last user form id so we can demonstrate reopen 
+let lastUserId = null; 
+function newUser() { 
+    if (!controller) return; 
+    const id = controller.spawn({ title: 'User Form', schema: userSchema, value: { name: '', age: null, role: '', agree: false }, persist: 'keep' 
+    // allows reopen after closing 
+    }); 
+    lastUserId = id; 
+} 
+
+function newProduct() { 
+    controller?.spawn({ title: 'Product Form', schema: productSchema, value: { title: '', price: null, category: '', active: true }, persist: 'destroy' }); 
+} 
+function reopenLastUser() { 
+    if (lastUserId) controller?.reopen(lastUserId); 
+} 
+function closeAll() { 
+    const list = controller?.list?.() ?? []; 
+    for (const { id } of list) controller.close(id, { force: true }); 
+} 
+
+
+
+async function promptToSchema(text, ctx) { 
+    return { 
+        title: 'Metadata Editor', persist: 'keep', kind: 'metadata' ,
+    // or 'destroy' // Let Canvas placement engine decide position/size 
+    /*    schema: [ { type: 'text', name: 'fullName', label: 'Full name' }, 
+                  { type: 'number', name: 'age', label: 'Age' }, 
+                  { type: 'select', name: 'role', label: 'Role', options: ['User', 'Admin', 'Guest'] }, 
+                  { type: 'checkbox', name: 'newsletter', label: 'Subscribe to newsletter' } ], 
+                   */
+
+        value: { entities: [] } 
+    }; 
+} 
+</script> 
+
+<div class="app"> 
+    <div class="toolbar"> 
+        <button onclick={newUser}>New User</button> 
+        <button onclick={newProduct}>New Product</button> 
+        <button onclick={reopenLastUser} title="Works if the last user form was closed (persist=keep)">Reopen Last User</button> 
+        <button onclick={closeAll}>Close All</button> 
+    </div> 
+
+    <Canvas bind:controller={controller} transitions={true} {promptToSchema}/> 
+</div> 
+<style> 
+    .app { 
+        inline-size: 100vw; 
+        block-size: 100vh; 
+        display: grid; 
+        grid-template-rows: auto 1fr; 
+        background: #85b5e5; 
+    } 
+    .toolbar { 
+        display: flex; 
+        gap: 8px; 
+        padding: 8px; 
+        align-items: center; 
+        border-bottom: 1px solid #e5e7eb; 
+        background: #ea5e5e; 
+    } 
+    .toolbar button { 
+        padding: 6px 10px; 
+        border: 1px solid #d1d5db; 
+        border-radius: 6px; 
+        background: #b3cce5; 
+        cursor: pointer; 
+    } 
+    .toolbar button:hover { 
+        background: #f3f4f6; 
+    } 
+</style>

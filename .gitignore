@@ -1,0 +1,71 @@
+# === Python ===
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+*.pdb
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.mypy_cache/
+.pytest_cache/
+.env
+.venv/
+venv/
+ENV/
+env/
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+
+# PEP 582; used by python locally
+__pypackages__/
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Coverage
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+# === Node.js / Svelte ===
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.svelte-kit/
+.svelte/
+build/
+dist/
+*.tsbuildinfo
+
+# === Miscellaneous / System Files ===
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# === Env Vars and Secrets ===
+.env.local
+.env.*
+!.env.example
+
+# If using SQLite
+*.sqlite3
+*.db
+
+# If using other tools (uncomment if relevant)
+# .pytest_cache/
+# .coverage
+# .envrc

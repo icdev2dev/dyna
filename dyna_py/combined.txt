@@ -191,31 +191,29 @@
 
 === ../dyna/src/Canvas.svelte ===
 <script> 
-    import FormWindow from './FormWindow.svelte'; 
-    import ChatWindow from './ChatWindow.svelte';
-    import MetadataWindow from './MetaDataWindow.svelte';
+    import { WINDOW_RENDERERS } from './windows/registry.js'; 
     const CHAT_TYPES = ['default', 'support', 'analysis']; 
     // Props 
     let { 
-            engine = { 
-                        place({ windows, config, canvasSize }) { 
-                            const offset = 28; 
-                            const i = windows.length; 
-                            return { 
-                                x: 40 + (i * offset) % Math.max(1, (canvasSize?.w ?? 1200) - 480), 
-                                y: 40 + (i * offset) % Math.max(1, (canvasSize?.h ?? 800) - 320), 
-                                w: config?.size?.w ?? 420, h: config?.size?.h ?? 280 }; 
-                        } 
-            },
+        engine = { 
+                    place({ windows, config, canvasSize }) { 
+                        const offset = 28; 
+                        const i = windows.length; 
+                        return { 
+                            x: 40 + (i * offset) % Math.max(1, (canvasSize?.w ?? 1200) - 480), 
+                            y: 40 + (i * offset) % Math.max(1, (canvasSize?.h ?? 800) - 320), 
+                            w: config?.size?.w ?? 420, h: config?.size?.h ?? 280 }; 
+                    } 
+        },
 
-            controller = $bindable(null), 
-            initial = [], 
-            confirmOnDirtyClose = true, 
-            persistDefault = 'destroy',
-            transitions = true,
-            onPromptCb = null,
-            promptToSchema = null,
-            promptPlaceholder = 'Describe a form you want to create…' 
+        controller = $bindable(null), 
+        initial = [], 
+        confirmOnDirtyClose = true, 
+        persistDefault = 'destroy',
+        transitions = true,
+        onPromptCb = null,
+        promptToSchema = null,
+        promptPlaceholder = 'Describe a form you want to create…' 
 
         } = $props()
 
@@ -411,53 +409,12 @@
 <div class="canvas" bind:this={canvasEl}> 
     <div class="windows" bind:this={windowsLayerEl}>
         {#each windows as w (w.id)}
-        
-            {#if w.kind === 'chat'}
-            <ChatWindow
-                id={w.id}
-                title={w.title}
-                bind:position={w.position}
-                bind:size={w.size}
-                z={w.z}
-                persist={w.persist}
-                config={w.chatConfig}
-                bind:messages={w.messages}
-                chatType={w.chatType}
-                onFocus={onFocus}
-                onRequestClose={onRequestClose}
-            />
-            {:else if w.kind === 'metadata'}
-                <MetadataWindow
-                id={w.id}
-                title={w.title}
-                bind:position={w.position}
-                bind:size={w.size}
-                z={w.z}
-                persist={w.persist}
-                bind:value={w.value}
-                onFocus={onFocus}
-                onRequestClose={onRequestClose}
-                />
-            {:else}
-            <FormWindow
-                id={w.id}
-                title={w.title}
-                schema={w.schema}
-                bind:value={w.value}
-                persist={w.persist}
-                position={w.position}
-                size={w.size}
-                z={w.z}
-                transitions={transitions}
-                onSubmit={onSubmit}
-                onRequestClose={onRequestClose}
-                onFocus={onFocus}
-            />
+            {@const Renderer = WINDOW_RENDERERS[w.kind]} 
+            {#if Renderer} 
+                <Renderer w={w} onFocus={onFocus} onRequestClose={onRequestClose} onSubmit={onSubmit} transitions={transitions} /> 
+            {:else} 
+                <div class="window-unknown" style={`z-index:${w.z}`}> Unknown window kind: {w.kind} </div> 
             {/if}
-
-
-
-
         {/each}
     </div>
     <form class="promptbar" onsubmit={submitPrompt}>
@@ -659,7 +616,7 @@
   function defaultChatAdapter() {
     return {
       async *stream({ messages, config, signal }) {
-        const res = await fetch('/api/chat', {
+        const res = await fetch('http://localhost:5000/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ messages, config }),
@@ -716,15 +673,15 @@
 
 <style>
   .chat { display: grid; grid-template-rows: 1fr auto; height: 100%; }
-  .messages { overflow: auto; padding: 8px; background: #fff; }
+  .messages { overflow: auto; padding: 8px; background: #c8a0a0; }
   .msg { display: flex; margin: 6px 0; }
   .msg.user { justify-content: flex-end; }
-  .bubble { max-width: 70%; padding: 8px 10px; border-radius: 12px; background: #f1f5f9; }
+  .bubble { max-width: 70%; padding: 8px 10px; border-radius: 12px; background: #038e13; }
   .msg.user .bubble { background: #2563eb; color: #fff; }
   .typing { opacity: 0.6; }
   .err { margin-top: 6px; color: #b91c1c; font-size: 0.85em; }
   .composer { display: flex; gap: 8px; padding: 8px; border-top: 1px solid #e2e8f0; background: #fafafa; }
-  textarea { flex: 1; resize: none; border: 1px solid #d1d5db; border-radius: 10px; padding: 10px 12px; outline: none; }
+  textarea { flex: 1; resize: none; border: 1px solid #eef0f3; border-radius: 10px; padding: 10px 12px; outline: none; }
   textarea:focus { border-color: var(--fi-accent, #2563eb); box-shadow: 0 0 0 3px rgba(37,99,235,0.20); }
 </style>
 
@@ -838,6 +795,21 @@ export default {
     */
 
 </script> 
+
+
+
+<div class="toolbar"> 
+    <button type="button" 
+        onclick={() => controller?.spawn({ 
+                            kind: 'plugin', 
+                            title: 'Plugin: Hello', 
+                            persist: 'keep', 
+                            plugin: { id: 'hello.plugn', version: '1.0.0' }, 
+                            props: { who: 'Canvas' }, 
+                            size: { w: 420, h: 260 }, 
+                            position: { x: 80, y: 80 } 
+                        }) 
+                        } > Open Hello Plugin </button> </div>
 
 <div class="app"> 
     <div class="toolbar"> 
@@ -1131,7 +1103,7 @@ export default app
         z = 1, 
         minSize = { w: 320, h: 160 }, 
         onFocus: onFocusCb, 
-        onRequestClose: onRequestCloseCb, children, headerActions 
+        onRequestClose: onRequestCloseCb, children=undefined, headerActions=undefined 
     } = $props(); 
     let winEl = null; 
     function focusSelf() { 
@@ -1265,6 +1237,51 @@ export default app
     } 
 </style>
 
+=== ../dyna/src/RenderPlugin.svelte ===
+<script> 
+
+    import WindowFrame from './WindowFrame.svelte'; 
+    let { w, onFocus: onFocusCb, onRequestClose: onRequestCloseCb } = $props(); 
+    let Comp = $state(null); let loading = $state(false); 
+    let error = $state(null); 
+
+    async function load() { 
+        loading = true; 
+        error = null; 
+        Comp = null; 
+        try { 
+            const url = `/plugins/${w.plugin.id}/${w.plugin.version}/index.js`; 
+            const mod = await import(url); 
+            Comp = mod?.default ?? null; 
+        } catch (e) { 
+            error = String(e); 
+            console.log("here")
+            console.log(error)
+        } finally { 
+            loading = false; 
+        } 
+    } 
+    $effect(() => { if (w?.plugin?.id && w?.plugin?.version) load(); });
+    function requestClose() { 
+        onRequestCloseCb?.({ id: w.id, isDirty: false, value: null, persist: w.persist }); 
+    } 
+</script>
+
+
+
+
+<WindowFrame id={w.id} title={w.title} bind:position={w.position} bind:size={w.size} z={w.z} onFocus={onFocusCb} onRequestClose={requestClose}>
+    {#snippet children()}
+    {#if error}<div class="err">{error}</div>
+    {:else if loading}<div>Loading…</div>
+    {:else if Comp}<Comp props={w.props ?? {}} />
+    {/if}
+    {/snippet}
+
+</WindowFrame>
+
+
+
 === ../dyna/src/MetaDataWindow.svelte ===
 <script> 
     import WindowFrame from './WindowFrame.svelte'; 
@@ -1322,9 +1339,12 @@ export default app
 
 
 === ../dyna/src/FormWindow.svelte ===
-<script> 
+<script lang="ts"> 
     import WindowFrame from './WindowFrame.svelte'; 
     import FormInterpreter from './FormInterpreter.svelte'; 
+    import { createEventDispatcher } from 'svelte'; 
+    
+
     let { 
         id, 
         title = 'Form', 
@@ -1334,7 +1354,7 @@ export default app
         readOnly = false, 
         persist = 'destroy',  
         position = $bindable({ x: 48, y: 48 }), 
-        size = $bindable({ w: 420, h: 280 }), 
+        size = $bindable({ w: 420, h: 280 }),
         z = 1, transitions = true,
         confirmOnDirtyClose = true, 
         onSubmit: onSubmitCb, 
@@ -1352,10 +1372,14 @@ export default app
             initialSnapshot = JSON.stringify(value ?? {}); isDirty = false; 
         } 
     }); 
+
+
     $effect(() => { 
         const now = JSON.stringify(value ?? {}); 
         isDirty = now !== initialSnapshot; 
-    }); 
+    });
+    
+     
     function handleSubmit({ value: v }) { 
         onSubmitCb?.({ id, value: v }); 
         initialSnapshot = JSON.stringify(value ?? {}); 
@@ -1866,4 +1890,88 @@ export function resizable(node, options = {}) {
         }
     };
 }
+
+=== ../dyna/src/windows/RenderForm.svelte ===
+<script> 
+    import FormWindow from '../FormWindow.svelte'; 
+    export let w; 
+    export let onFocus; 
+    export let onRequestClose; 
+    export let onSubmit; 
+    export let transitions = true; 
+</script>
+
+<FormWindow
+    id={w.id}
+    title={w.title}
+    schema={w.schema}
+    bind:value={w.value}
+    persist={w.persist}
+    bind:position={w.position}
+    bind:size={w.size}
+    z={w.z}
+    {transitions}
+    onSubmit={onSubmit}
+    onRequestClose={onRequestClose}
+    onFocus={onFocus}
+/>
+
+
+
+=== ../dyna/src/windows/RenderMetadata.svelte ===
+<script> 
+    import MetaDataWindow from '../MetaDataWindow.svelte'; 
+    export let w; 
+    export let onFocus; 
+    export let onRequestClose; 
+</script>
+
+<MetaDataWindow
+    id={w.id}
+    title={w.title}
+    bind:position={w.position}
+    bind:size={w.size}
+    z={w.z}
+    persist={w.persist}
+    bind:value={w.value}
+    onFocus={onFocus}
+    onRequestClose={onRequestClose}
+/>
+
+
+=== ../dyna/src/windows/registry.js ===
+import RenderForm from './RenderForm.svelte';
+import RenderChat from './RenderChat.svelte';
+import RenderMetadata from './RenderMetadata.svelte';
+
+export const WINDOW_RENDERERS = {
+    form: RenderForm,
+    chat: RenderChat,
+    metadata: RenderMetadata
+};
+
+
+=== ../dyna/src/windows/RenderChat.svelte ===
+<script> 
+    import ChatWindow from '../ChatWindow.svelte'; 
+    export let w; 
+    export let onFocus; 
+    export let onRequestClose; 
+</script>
+
+<ChatWindow
+    id={w.id}
+    title={w.title}
+    bind:position={w.position}
+    bind:size={w.size}
+    z={w.z}
+    persist={w.persist}
+    config={w.chatConfig}
+    bind:messages={w.messages}
+    chatType={w.chatType}
+    onFocus={onFocus}
+    onRequestClose={onRequestClose}
+/>
+
+
 

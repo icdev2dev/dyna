@@ -1,0 +1,7 @@
+{
+  "id": "hello.plugin",
+  "version": "1.0.0",
+  "moduleUrl": "/plugins/hello.plugin/1.0.0/index.js",
+  "sha256": "9zFiaAnIZGA8w+YYRK+Hb5do3Eu4cClZUQ1n27/7DPE=",
+  "allowed": true
+}

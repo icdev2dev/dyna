@@ -2,6 +2,13 @@ from flask import Flask, request, jsonify
 from flask import  Response, stream_with_context
 from flask_cors import CORS  # optional; prefer proxy in dev
 from fastmcp import Client
+import os
+from flask import send_from_directory, abort
+from werkzeug.utils import safe_join
+
+PLUGINS_ROOT = os.path.join(os.path.dirname("/home/milind/src/svelte/dyna/dyna_py/"), 'public', "plugins")
+
+print(PLUGINS_ROOT)
 
 CONFIG = {
     "mcpServers": {
@@ -21,8 +28,26 @@ app = Flask(__name__)
 # If you can proxy via Vite (recommended), you can remove CORS.
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 CORS(app, resources={r"/api/*": {"origins": ["http://localhost:5174", "http://127.0.0.1:5174"]}})
+CORS(app, resources={ r"/plugins/*": {"origins": "*"}})
+CORS(app, resources={ r"/plugins/*": {"origins": ["http://localhost:5175", "http://127.0.0.1:5175"]}})
 
 ALLOWED_FIELD_TYPES = {"text", "number", "select", "checkbox"}
+
+
+@app.route('/plugins/<path:subpath>')
+def serve_plugin_asset(subpath):
+    full = safe_join(PLUGINS_ROOT, subpath)
+    print("full")
+    if not full or not os.path.isfile(full):
+        app.logger.info(f'Plugins MISS: {subpath} -> {full}')
+        return abort(404)
+    # Set correct MIME and disable cache in dev
+    if full.endswith('.js'):
+        return send_from_directory(PLUGINS_ROOT, subpath, mimetype='text/javascript')
+    if full.endswith('.json'):
+        return send_from_directory(PLUGINS_ROOT, subpath, mimetype='application/json')
+    return send_from_directory(PLUGINS_ROOT, subpath)
+
 
 def sanitize_field(f):
     if not isinstance(f, dict):

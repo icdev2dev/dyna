@@ -97,7 +97,7 @@
                             kind: 'plugin', 
                             title: 'Plugin: HI Hello', 
                             persist: 'keep', 
-                            plugin: { id: 'hello.plugin', version: '1.0.5'}, 
+                            plugin: { id: 'hello.plugin', version: '1.0.1' }, 
                             props: { who: 'Canvas' }, 
                             size: { w: 420, h: 260 }, 
                             position: { x: 80, y: 80 } 

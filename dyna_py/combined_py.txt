@@ -1,0 +1,1478 @@
+=== ./joke_agent.py ===
+import asyncio
+from baml_test import tell_a_joke
+from agent_core import InterruptMixin, AgentBase, PauseMixin, StopMixin
+
+class JokeAgent(StopMixin, PauseMixin, InterruptMixin, AgentBase):
+    def __init__(self, agent_id, initial_subject="foot"):
+        super().__init__(agent_id)
+        self.current_subject = initial_subject
+        self._task = None  # set by creator
+
+    async def run(self):
+        step = 0
+        print(f"JokeAgent {self.agent_id} started!")
+        while True:
+            if self.should_stop():
+                print(f"JokeAgent {self.agent_id}: stopping.")
+                break
+
+            await self.wait_if_paused()
+
+                    # Allow stop to break out even if we were paused
+            if self.should_stop():
+                print(f"JokeAgent {self.agent_id}: stopping after pause.")
+                break
+
+            # Check for new guidance
+            guidance = await self.check_interrupt()
+            if guidance is not None:
+                # Expect guidance as a dict: { "subject": "cats" }
+                if isinstance(guidance, dict) and "subject" in guidance:
+                    self.current_subject = guidance["subject"]
+                    print(f"JokeAgent {self.agent_id}: now telling jokes about {self.current_subject}")
+                    # Optionally, you could print a cue or do something else
+
+            joke = await tell_a_joke(self.current_subject)
+            print(f"[Agent {self.agent_id}] Joke: {joke}")
+
+            await asyncio.sleep(3)
+            step += 1
+
+
+
+=== ./agent.py ===
+
+import asyncio
+from environment import environment_reload
+from queue_imp import mark_action_processed_async, QUEUE_NAME
+
+from agent_core import AgentBase, InterruptMixin
+from joke_agent import JokeAgent
+import json
+
+import json
+from environment import environment_reload as _environment_reload
+
+JOKE_AGENTS = {}  # agent_id -> JokeAgent
+
+
+async def environment_reload_handler(db, async_tbl, action):
+    action_id = action.get("action_id")
+    try:
+        await _environment_reload(action)
+    finally:
+        if action_id:
+            await mark_action_processed_async(async_tbl, action_id)
+
+# Agent action handlers
+
+
+async def agent_create(db, async_tbl, action):
+    print(f"Creating agent: {action.get('action_id')} ...")
+    action_id = action.get("action_id")
+    try:
+        payload = json.loads(action.get("payload") or "{}")
+        agent_id = payload.get("agent_id")
+        initial_subject = payload.get("initial_subject", "foot")
+        if not agent_id:
+            print("create_agent missing agent_id in payload")
+            return
+
+        if agent_id not in JOKE_AGENTS:
+            agent = JokeAgent(agent_id, initial_subject=initial_subject)
+            JOKE_AGENTS[agent_id] = agent
+            task = asyncio.create_task(agent.run())
+            agent._task = task
+            print(f"Agent {agent_id}: launching JokeAgent loop (subject={initial_subject})")
+        else:
+            print(f"Agent {agent_id} already exists; skipping.")
+    finally:
+        if action_id:
+            await mark_action_processed_async(async_tbl, action_id)
+            print(f"Marked action_id {action_id} as processed.")
+
+
+
+async def agent_destroy(db, async_tbl, action):
+    action_id = action.get("action_id")
+    try:
+        payload = json.loads(action.get("payload") or "{}")
+        agent_id = payload.get("agent_id") or action.get("agent_id")
+        if not agent_id:
+            print("agent_destroy missing agent_id")
+            return
+
+        agent = JOKE_AGENTS.get(agent_id)
+        if not agent:
+            print(f"Agent {agent_id} not found.")
+            return
+
+        # If paused, wake it so it can exit
+        if hasattr(agent, "resume"):
+            agent.resume()
+        # Request cooperative stop
+        if hasattr(agent, "request_stop"):
+            agent.request_stop()
+
+        task = getattr(agent, "_task", None)
+        if isinstance(task, asyncio.Task):
+            try:
+                await asyncio.wait_for(task, timeout=5.0)
+            except asyncio.TimeoutError:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+
+        # Cleanup registry
+        JOKE_AGENTS.pop(agent_id, None)
+        print(f"Agent {agent_id} destroyed.")
+    finally:
+        if action_id:
+            await mark_action_processed_async(async_tbl, action_id)
+
+async def agent_pause(db, async_tbl, action):
+    action_id = action.get("action_id")
+    try:
+        payload = json.loads(action.get("payload") or "{}")
+        agent_id = payload.get("agent_id") or action.get("agent_id")
+        if not agent_id:
+            print("agent_pause missing agent_id")
+            return
+        agent = JOKE_AGENTS.get(agent_id)
+        if agent:
+            agent.pause()
+            print(f"Paused agent {agent_id}")
+        else:
+            print(f"Agent {agent_id} not found")
+    finally:
+        if action_id:
+            await mark_action_processed_async(async_tbl, action_id)
+
+async def agent_resume(db, async_tbl, action):
+    action_id = action.get("action_id")
+    try:
+        payload = json.loads(action.get("payload") or "{}")
+        agent_id = payload.get("agent_id") or action.get("agent_id")
+        if not agent_id:
+            print("agent_resume missing agent_id")
+            return
+        agent = JOKE_AGENTS.get(agent_id)
+        if agent:
+            agent.resume()
+            print(f"Resumed agent {agent_id}")
+        else:
+            print(f"Agent {agent_id} not found")
+    finally:
+        if action_id:
+            await mark_action_processed_async(async_tbl, action_id)
+
+
+async def agent_interrupt(db, async_tbl, action):
+    # payload is expected to be a JSON string with agent_id and guidance
+    payload_raw = action.get("payload")
+    try:
+        payload = json.loads(payload_raw)
+    except Exception:
+        print(f"Malformed payload: {payload_raw}")
+        return
+    
+    agent_id = payload["agent_id"]
+    guidance = payload.get("guidance")
+    agent = JOKE_AGENTS.get(agent_id)
+    if agent is not None:
+        await agent.interrupt(guidance)
+        print(f"Sent guidance to agent {agent_id}: {guidance}")
+    else:
+        print(f"Agent {agent_id} not found.")
+
+    # Mark as processed if action_id is present
+    action_id = action.get("action_id")
+    if action_id:
+        await mark_action_processed_async(async_tbl, action_id)
+
+
+
+
+# Action dispatcher mapping
+ACTION_HANDLERS = {
+    'create_agent': agent_create,
+    'agent_destroy': agent_destroy,
+    'agent_pause': agent_pause,
+    'agent_resume': agent_resume,
+    'agent_interrupt': agent_interrupt,
+    'environment_reload': environment_reload_handler,
+    # Add more
+}
+
+
+
+IN_FLIGHT_ACTION_IDS = set()
+
+async def handle_actions(db, async_tbl, actions):
+    for action in actions:
+        aid = action.get("action_id")
+        if not aid:
+            print(f"Skipping action without action_id: {action}")
+            continue
+        if aid in IN_FLIGHT_ACTION_IDS:
+            continue
+        handler = ACTION_HANDLERS.get(action["type"])
+        if not handler:
+            print(f"Unknown action type: {action}")
+            continue
+
+        IN_FLIGHT_ACTION_IDS.add(aid)
+
+        async def run_one():
+            try:
+                await handler(db, async_tbl, action)
+            finally:
+                IN_FLIGHT_ACTION_IDS.discard(aid)
+        asyncio.create_task(run_one())
+
+
+
+
+
+
+
+async def poll_lancedb_for_actions(db, async_tbl):
+    
+
+    await asyncio.sleep(5)
+    cnt = poll_lancedb_for_actions.counter
+    poll_lancedb_for_actions.counter += 1
+    if cnt % 3 == 0:
+        print("c")
+        async_tbl = await db.open_table(QUEUE_NAME)
+
+        result = await async_tbl.query().where("processed == False").to_pandas()
+        return result.to_dict(orient="records")  
+    return []
+
+poll_lancedb_for_actions.counter = 0
+
+
+
+class InterruptibleAgent(InterruptMixin, AgentBase):
+    async def run(self):
+        step = 0
+        print(f"Agent {self.agent_id} started!")
+        while step < 10:
+            await self.wait_if_paused()
+            guidance = await self.check_interrupt()
+            if guidance is not None:
+                print(f"Agent {self.agent_id} got guidance: {guidance}")
+                # Change behavior as needed
+            print(f"Agent {self.agent_id} working: {step}")
+            await asyncio.sleep(1)
+            step += 1
+        print(f"Agent {self.agent_id} finished!")
+
+
+            
+
+
+=== ./app.py ===
+# app.py
+
+import flask
+from flask_cors import CORS
+from routes.api_map import MAP_HTTP_FUNCS, handle_request_response
+
+
+from flask_socketio import SocketIO, emit, disconnect, join_room, leave_room
+from flask import request
+
+def configure_ws(socketio: SocketIO):    
+    def request_response_wrapper(data):
+        handle_request_response(data, socketio)
+    socketio.on('request_response')(handler=request_response_wrapper)
+
+def configure_http(app: flask.app.Flask):
+    for http_func in MAP_HTTP_FUNCS:
+        path, func, *rest = http_func
+        kwargs = {}
+        if rest:
+            kwargs['methods'] = rest[0]
+        app.add_url_rule(path, view_func=func, **kwargs)
+
+def create_app():
+    app = flask.Flask(__name__)
+    CORS(app, resources={r"/api/*": {"origins": "*"}})
+    socketio = SocketIO(app, cors_allowed_origins=["http://localhost:5173"])
+
+    configure_http(app)
+    configure_ws(socketio=socketio)
+    
+    return app
+
+if __name__ == "__main__":
+    app = create_app()
+    app.run(debug=True)
+
+
+=== ./agent_core.py ===
+import asyncio
+
+class AgentBase:
+    def __init__(self, agent_id, *args, **kwargs):
+        super().__init__(*args, **kwargs)  # cooperate in MRO
+        self.agent_id = agent_id
+    async def run(self):
+        raise NotImplementedError
+
+class InterruptMixin:
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.interrupt_queue = asyncio.Queue()
+    @classmethod
+    def interrupt_data_type(cls):
+        return None
+    async def interrupt(self, guidance):
+        await self.interrupt_queue.put(guidance)
+    async def check_interrupt(self):
+        if not self.interrupt_queue.empty():
+            return await self.interrupt_queue.get()
+        return None
+
+class PauseMixin:
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._pause_event = asyncio.Event()
+        self._pause_event.set()  # start unpaused
+
+    async def wait_if_paused(self):
+        await self._pause_event.wait()
+
+    def pause(self):
+        self._pause_event.clear()
+
+    def resume(self):
+        self._pause_event.set()
+
+    def is_paused(self):
+        return not self._pause_event.is_set()
+
+
+
+class StopMixin:
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._stop_event = asyncio.Event()
+
+    def request_stop(self):
+        self._stop_event.set()
+
+    def should_stop(self):
+        return self._stop_event.is_set()
+
+
+=== ./extract_routes.py ===
+import re
+
+HTTP_METHODS = ['get', 'post', 'put', 'delete', 'patch', 'options', 'head']
+
+def extract_routes(filename):
+    with open(filename, "r") as f:
+        code = f.read()
+
+    # Pattern for classic @app.route
+    route_pattern = re.compile(r"@app\.route\(([^)]*)\)\s*def\s+([a-zA-Z0-9_]+)[(]")
+    # Patterns for shortcut decorators @app.post("/foo") etc
+    shortcut_patterns = {
+        meth: re.compile(rf"@app\.{meth}\(\s*['\"]([^'\"]+)['\"]\s*\)\s*def\s+([a-zA-Z0-9_]+)[(]")
+        for meth in HTTP_METHODS
+    }
+
+    output = []
+
+    # Classic @app.route decorators
+    for (route_args, func_name) in route_pattern.findall(code):
+        # Find HTTP methods if specified, else default to GET
+        m = re.search(r"methods\s*=\s*\[([^\]]+)\]", route_args)
+        if m:
+            methods = [s.strip().strip("'\"") for s in m.group(1).split(",")]
+        else:
+            methods = ["GET"]
+        # Grab just the route string
+        route_match = re.search(r'["\']([^"\']+)["\']', route_args)
+        route = route_match.group(1) if route_match else "<parse error>"
+        output.append({
+            "route": route,
+            "func": func_name,
+            "methods": methods,
+        })
+
+    # Shortcut decorators (e.g. @app.post('/api/foo'))
+    for method, pattern in shortcut_patterns.items():
+        for match in pattern.findall(code):
+            route, func_name = match
+            output.append({
+                "route": route,
+                "func": func_name,
+                "methods": [method.upper()]
+            })
+
+    # Print in config-list format
+    print("MAP_HTTP_FUNCS = [")
+    for rec in output:
+        print(f"    ['{rec['route']}', {rec['func']}, {rec['methods']}],")
+    print("]")
+
+if __name__ == "__main__":
+    extract_routes("flask_test.py")
+
+=== ./environment.py ===
+# environment.py
+import asyncio
+
+async def environment_reload(action):
+    print(f"Reloading environment {action['env_id']}")
+    await asyncio.sleep(1)
+    print(f"Environment {action['env_id']} reloaded.")
+    
+
+=== ./metadata_registry_tests.py ===
+import unittest
+from metadata_registry import get_all_schema_names
+
+json_rep = {
+  "schema_registry": [
+    {
+      "schema_name": "Project",
+      "is_top_level": True,
+      "description": "Schema representing a project entity.",
+      "display_name": "Project",
+      "icon": "project_icon.png",
+      "vector": None
+    },
+    {
+      "schema_name": "Prompt",
+      "is_top_level": False,
+      "description": "Prompt details used within a project.",
+      "display_name": "Prompt",
+      "icon": "prompt_icon.png",
+      "vector": None
+    }
+  ],
+  "attribute_metadata": [
+    {
+      "schema_name": "Project",
+      "attribute_name": "project_id",
+      "data_type": "GUID",
+      "label": "Project Id",
+      "required": True,
+      "ui_control": "text",
+      "description": "Unique identifier for the project.",
+      "parent_schema": None,
+      "related_schema": None,
+      "relation_type": None,
+      "vector": None
+    },
+    {
+      "schema_name": "Project",
+      "attribute_name": "project_name",
+      "data_type": "string",
+      "label": "Project Name",
+      "required": True,
+      "ui_control": "text",
+      "description": "Name of the project.",
+      "parent_schema": None,
+      "related_schema": None,
+      "relation_type": None,
+      "vector": None
+    },
+    {
+      "schema_name": "Project",
+      "attribute_name": "prompts",
+      "data_type": "relation",
+      "label": "Prompts",
+      "required": False,
+      "ui_control": "table",
+      "description": "List of prompts associated with the project.",
+      "parent_schema": None,
+      "related_schema": "Prompt",
+      "relation_type": "one_to_many",
+      "vector": None
+    },
+    {
+      "schema_name": "Prompt",
+      "attribute_name": "name",
+      "data_type": "string",
+      "label": "Prompt Name",
+      "required": True,
+      "ui_control": "text",
+      "description": "The name of the prompt.",
+      "parent_schema": "Project",
+      "related_schema": None,
+      "relation_type": None,
+      "vector": None
+    },
+    {
+      "schema_name": "Prompt",
+      "attribute_name": "description",
+      "data_type": "string",
+      "label": "Prompt Description",
+      "required": False,
+      "ui_control": "textarea",
+      "description": "Details about what the prompt is for.",
+      "parent_schema": "Project",
+      "related_schema": None,
+      "relation_type": None,
+      "vector": None
+    }
+  ]
+}
+
+
+class MetadataTestCases(unittest.TestCase) :
+    def test_schema_names(self): 
+        schema_names =  get_all_schema_names(json_rep)
+        print(schema_names)
+       
+unittest.main()
+
+
+=== ./queue_imp.py ===
+import lancedb
+import pyarrow as pa
+import pandas as pd
+from datetime import datetime
+import uuid
+import json
+
+# --------------------
+# Database Setup
+# --------------------
+AGENTS_URI = "data/agents"
+AGENTS_DB = lancedb.connect(AGENTS_URI)
+
+AGENTS_CONFIG_NAME = "agents_config"
+QUEUE_NAME = "queue"
+
+AGENTS_CONFIG_SCHEMA = pa.schema([
+    pa.field("agent_id", pa.string(), nullable=False),
+    pa.field("agent_type", pa.string(), nullable=False),
+    pa.field("agent_description", pa.string(), nullable=True),
+    pa.field("agents_metadata", pa.string(), nullable=True),
+])
+
+QUEUE_SCHEMA = pa.schema([
+    pa.field("action_id", pa.string(), nullable=False),
+    pa.field("type", pa.string(), nullable=False),
+    pa.field("created_at", pa.string(), nullable=False),
+    pa.field("actor", pa.string(), nullable=False),
+    pa.field("processed", pa.bool_(), nullable=False),
+    pa.field("urgency", pa.string()),
+    pa.field("description", pa.string()),
+    pa.field("payload", pa.string()),
+    pa.field("metadata", pa.string()),
+])
+
+
+# --------------------
+# Agent Config (Metadata) Management
+# --------------------
+def create_agent_config(agent_id, agent_type, agent_description="", agents_metadata=None):
+    tbl = AGENTS_DB.open_table(AGENTS_CONFIG_NAME)
+    record = {
+        "agent_id": agent_id,
+        "agent_type": agent_type,
+        "agent_description": agent_description,
+        "agents_metadata": json.dumps(agents_metadata) if agents_metadata else None,
+    }
+    tbl.add(data=[record], mode="append")
+    print(f"AgentConfig for {agent_id} ({agent_type}) created.")
+
+def update_agent_config(agent_id, agent_type=None, agent_description=None, agents_metadata=None):
+    tbl = AGENTS_DB.open_table(AGENTS_CONFIG_NAME)
+    updates = {}
+    if agent_type is not None: updates["agent_type"] = agent_type
+    if agent_description is not None: updates["agent_description"] = agent_description
+    if agents_metadata is not None: updates["agents_metadata"] = json.dumps(agents_metadata)
+    if not updates:
+        print("No updates provided.")
+        return
+    count = tbl.update(where=f"agent_id == '{agent_id}'", updates=updates)
+    print(f"Updated {count} AgentConfig record(s) for {agent_id}.")
+
+def delete_agent_config(agent_id):
+    tbl = AGENTS_DB.open_table(AGENTS_CONFIG_NAME)
+    count = tbl.delete(where=f"agent_id == '{agent_id}'")
+    print(f"Deleted {count} AgentConfig record(s) for {agent_id}.")
+
+def list_agent_configs():
+    tbl = AGENTS_DB.open_table(AGENTS_CONFIG_NAME)
+    df = tbl.to_pandas()
+    if df.empty:
+        print("No agent configs found.")
+        return []
+    configs = []
+    for _, row in df.iterrows():
+        metadata = json.loads(row.agents_metadata or '{}')
+        print(f"agent_id={row.agent_id}, type={row.agent_type}, desc={row.agent_description}, metadata={metadata}")
+        configs.append({
+            "agent_id": row.agent_id,
+            "agent_type": row.agent_type,
+            "agent_description": row.agent_description,
+            "agents_metadata": metadata
+        })
+    return configs
+
+# --------------------
+# Action Queue Management
+# --------------------
+def create_action(
+    action_type: str,
+    actor: str,
+    payload: str = None,
+    metadata: str = None,
+    urgency: str = "normal",
+    description: str = "",
+    processed: bool = False,
+    action_id: str = None,
+    created_at: str = None,
+):
+    queue_tbl = AGENTS_DB.open_table(QUEUE_NAME)
+    record = {
+        "action_id": action_id or str(uuid.uuid4()),
+        "type": action_type,
+        "created_at": created_at or datetime.now().isoformat(),
+        "actor": actor,
+        "processed": processed,
+        "urgency": urgency,
+        "description": description,
+        "payload": payload,
+        "metadata": metadata,
+    }
+    queue_tbl.add(data=[record], mode="append")
+    print(f"Action '{action_type}' for actor '{actor}' queued.")
+
+def list_actions():
+    queue_tbl = AGENTS_DB.open_table(QUEUE_NAME)
+    df = queue_tbl.to_pandas()
+    print(df)
+    return df.to_dict(orient="records")
+
+def delete_all_actions():
+    queue_tbl = AGENTS_DB.open_table(QUEUE_NAME)
+    queue_tbl.delete("1 == 1")
+
+# --------------------
+# Helper: Agent action creators
+# --------------------
+def agent_create(agent_id, actor, initial_subject="foot"):
+    payload = json.dumps({
+        "agent_id": agent_id,
+        "initial_subject": initial_subject
+    })
+    create_action(
+        action_type="create_agent",
+        actor=actor,
+        payload=payload
+    )
+    print(f"CreateAgent action for {agent_id} queued with initial_subject: {initial_subject}")
+
+def agent_interrupt(agent_id, actor, guidance: dict):
+    payload = json.dumps({
+        "agent_id": agent_id,
+        "guidance": guidance
+    })
+    create_action(
+        action_type="agent_interrupt",
+        actor=actor,
+        payload=payload
+    )
+    print(f"Interrupt action for {agent_id} queued with guidance: {guidance}")
+
+def agent_destroy_action(agent_id, actor, reason=None):
+    payload = json.dumps({"agent_id": agent_id, "reason": reason})
+    create_action(action_type="agent_destroy", actor=actor, payload=payload)
+
+
+def agent_pause_action(agent_id, actor, reason=None):
+    payload = json.dumps({"agent_id": agent_id, "reason": reason})
+    create_action(action_type="agent_pause", actor=actor, payload=payload)
+
+def agent_resume_action(agent_id, actor):
+    payload = json.dumps({"agent_id": agent_id})
+    create_action(action_type="agent_resume", actor=actor, payload=payload)
+
+# --------------------
+# Async Helper
+# --------------------
+async def mark_action_processed_async(async_tbl, action_id: str):
+    await async_tbl.update(where=f'action_id == "{action_id}"', updates={"processed": True})
+
+# --------------------
+# Main/test (remove or modify as needed)
+# --------------------
+if __name__ == "__main__":
+    # Example: create and list agent configs
+#    create_agents_config_schema()
+    create_agent_config("agent1", "JokeAgent", "Tells programming jokes", {"initial_subject": "python"})
+    list_agent_configs()
+#    agent_create("agent1", "user", initial_subject="bananas")
+#    agent_interrupt("agent1", "user", {"subject": "knock-knock"})
+#    list_actions()
+
+
+=== ./flask_test.py ===
+from flask import Flask, request, jsonify
+from flask import  Response, stream_with_context
+from flask_cors import CORS  # optional; prefer proxy in dev
+from fastmcp import Client
+import os
+from flask import send_from_directory, abort
+from werkzeug.utils import safe_join
+
+PLUGINS_ROOT = os.path.join(os.path.dirname("/home/milind/src/svelte/dyna/dyna_py/"), 'public', "plugins")
+
+print(PLUGINS_ROOT)
+
+CONFIG = {
+    "mcpServers": {
+        "aws-knowledge-mcp-server": { "url": "https://knowledge-mcp.global.api.aws"}
+    }
+}
+
+CACHE_TOOLS = {
+    "aws_kb_search": "aws___search_documentation"
+}
+
+
+CLIENT = Client(CONFIG)
+
+
+app = Flask(__name__)
+# If you can proxy via Vite (recommended), you can remove CORS.
+CORS(app, resources={r"/api/*": {"origins": "*"}})
+CORS(app, resources={r"/api/*": {"origins": ["http://localhost:5174", "http://127.0.0.1:5174"]}})
+CORS(app, resources={ r"/plugins/*": {"origins": "*"}})
+CORS(app, resources={ r"/plugins/*": {"origins": ["http://localhost:5175", "http://127.0.0.1:5175"]}})
+
+ALLOWED_FIELD_TYPES = {"text", "number", "select", "checkbox"}
+
+
+@app.route('/plugins/<path:subpath>')
+def serve_plugin_asset(subpath):
+    full = safe_join(PLUGINS_ROOT, subpath)
+    print("full")
+    if not full or not os.path.isfile(full):
+        app.logger.info(f'Plugins MISS: {subpath} -> {full}')
+        return abort(404)
+    # Set correct MIME and disable cache in dev
+    if full.endswith('.js'):
+        return send_from_directory(PLUGINS_ROOT, subpath, mimetype='text/javascript')
+    if full.endswith('.json'):
+        return send_from_directory(PLUGINS_ROOT, subpath, mimetype='application/json')
+    return send_from_directory(PLUGINS_ROOT, subpath)
+
+
+def sanitize_field(f):
+    if not isinstance(f, dict):
+        return None
+    t = f.get("type")
+    if t not in ALLOWED_FIELD_TYPES:
+        t = "text"
+    name = (f.get("name") or "").strip()
+    if not name:
+        return None
+    label = f.get("label") or name
+    out = {"type": t, "name": name, "label": str(label)}
+    if t == "select":
+        opts = f.get("options") or []
+        norm = []
+        for o in opts:
+            if isinstance(o, str):
+                norm.append({"value": o, "label": o})
+            elif isinstance(o, dict) and "value" in o and "label" in o:
+                norm.append({"value": o["value"], "label": o["label"]})
+        out["options"] = norm
+    return out
+
+def form_from_prompt(prompt: str):
+    p = prompt.lower()
+    if "product" in p:
+        return {
+            "kind": "form",
+            "title": "Product Form",
+            "persist": "keep",
+            "schema": [
+                {"type": "text", "name": "title", "label": "Title"},
+                {"type": "number", "name": "price", "label": "Price"},
+                {"type": "select", "name": "category", "label": "Category", "options": ["A", "B", "C"]},
+                {"type": "checkbox", "name": "active", "label": "Active"},
+            ],
+            "value": {"active": True}
+        }
+    elif "metadata" in p:
+        return {
+            "kind": "metadata",
+            "title": "Metadata Editor",
+            "persist": "keep",
+            "value": {"entities": []}
+        }
+    elif "chat" in p:
+        if "aws" in p:
+            return {
+                "kind": "chat",
+                "title": "Chat with AWS",
+                "persist": "keep",
+                "chatType": "support",
+                "value": {"entities": []}
+            }
+        else :
+            return {
+                "kind": "chat",
+                "title": "Chat with OpenAI",
+                "persist": "keep",
+                "chatType": "analysis",
+                "value": {"entities": []}
+            }
+    
+    else:
+        return {
+            "kind": "form",
+            "title": "User Form",
+            "persist": "keep",
+            "schema": [
+                {"type": "text", "name": "name", "label": "Name"},
+                {"type": "number", "name": "age", "label": "Age"},
+                {"type": "select", "name": "role", "label": "Role", "options": ["User", "Admin"]},
+                {"type": "checkbox", "name": "agree", "label": "Agree to terms"},
+            ],
+            "value": {"agree": False}
+        }
+
+def sanitize_config(cfg):
+    if not isinstance(cfg, dict):
+        return None
+    kind = cfg.get("kind") or "form"
+    # allow only kinds the Canvas knows
+    if kind not in {"form", "metadata", "chat"}:
+        kind = "form"
+
+    out = {
+        "kind": kind,
+        "title": str(cfg.get("title") or ("Metadata Editor" if kind == "metadata" else "Form")),
+        "persist": "keep" if cfg.get("persist") == "keep" else "destroy"
+    }
+
+    if kind == "form":
+        schema = cfg.get("schema") or []
+        schema = [s for s in (sanitize_field(f) for f in schema) if s is not None]
+        out["schema"] = schema
+        out["value"] = cfg.get("value") if isinstance(cfg.get("value"), dict) else {}
+    elif kind == "metadata":
+        val = cfg.get("value")
+        out["value"] = val if isinstance(val, dict) else {"entities": []}
+    elif kind == "chat":
+        # Your Canvas supports chat; include minimal safe defaults
+        out["messages"] = cfg.get("messages") if isinstance(cfg.get("messages"), list) else []
+        out["chatConfig"] = cfg.get("chatConfig") if isinstance(cfg.get("chatConfig"), dict) else {}
+
+    # optional: clamp size/position if provided
+    def clamp(v, lo, hi, default):
+        try:
+            n = float(v)
+            return max(lo, min(hi, n))
+        except Exception:
+            return default
+
+    size = cfg.get("size") or {}
+    out["size"] = {
+        "w": clamp(size.get("w"), 320, 1200, 420),
+        "h": clamp(size.get("h"), 200, 900, 280)
+    }
+    pos = cfg.get("position") or {}
+    out["position"] = {
+        "x": clamp(pos.get("x"), 0, 4000, 40),
+        "y": clamp(pos.get("y"), 0, 4000, 40)
+    }
+
+    return out
+
+@app.post("/api/prompt-to-schema")
+def prompt_to_schema():
+    data = request.get_json(silent=True) or {}
+    prompt = (data.get("prompt") or "").strip()
+    if not prompt:
+        return jsonify({"error": "prompt is required"}), 400
+
+    # In a real system, you could call an LLM or rules engine here
+    cfg = form_from_prompt(prompt)
+
+    # Sanitize before returning
+    safe = sanitize_config(cfg)
+    if not safe:
+        return jsonify({"error": "invalid response"}), 500
+    return jsonify(safe), 200
+
+
+ALLOWED_CHAT_TYPES = {"default", "support", "analysis"}
+ALLOWED_ROLES = {"user", "assistant", "system"}
+
+
+import asyncio
+
+
+async def mcp_search_async(search_phrase: str):
+    tool_name = CACHE_TOOLS.get("aws_kb_search", "aws___search_documentation")
+    async with Client(CONFIG) as client:
+        res = await client.call_tool(tool_name, {"search_phrase": search_phrase})
+    return parse_mcp_result(res)
+
+
+def run_async(coro):
+    """Run an async coroutine from sync context."""
+    try:
+        loop = asyncio.get_running_loop()
+    # If we are somehow already in an event loop, offload to a new thread.
+    # In normal Flask sync routes this branch won't trigger.
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            return pool.submit(asyncio.run, coro).result()
+    except RuntimeError:
+    # No running loop in this thread
+        return asyncio.run(coro)
+
+import json
+
+def parse_mcp_result(res):
+    """
+    Attempt to extract a text snippet from a fastmcp result.
+    Handles either a structured object with content[0].text or raw JSON/text.
+    """
+    
+    try:
+    # Common fastmcp pattern: res.content is a list with .text
+       
+        if hasattr(res, "content") and res.content:
+            
+            txt = getattr(res.content[0], "text", None)
+            if txt is not None:
+                try:
+                    data = json.loads(txt)
+                    return data['response']['payload']['content']['result'][0]['context']
+                    # adapt to your server's shape
+                    return (
+                    data.get("response", {})
+                    .get("payload", {})
+                    .get("content", {})
+                    .get("result")
+                    or txt
+                    )
+                except Exception:
+                    return txt
+            else:
+                return "hjh"
+        # Fallback: if res is already a dict-like
+        if isinstance(res, dict):
+            
+            return (
+                res.get("response", {})
+                .get("payload", {})
+                .get("content", {})
+                .get("result")
+                or json.dumps(res)
+            )
+
+        # Last resort: stringify
+        return str(res)
+    except Exception as e:
+        return f"Tool response parse error: {e}"
+    
+def clamp_str(s, max_len=4000):
+    try:
+        s = str(s)
+    except Exception:
+        s = ""
+    return s[:max_len]
+
+
+
+def sanitize_messages(msgs, limit=30):
+    """Keep only recent messages, strip to safe shape."""
+    if not isinstance(msgs, list):
+        return []
+    out = []
+    for m in msgs[-limit:]:
+        if not isinstance(m, dict):
+            continue
+        role = m.get("role")
+        content = clamp_str(m.get("content", ""), 4000)
+        if role in ALLOWED_ROLES and content:
+            out.append({"role": role, "content": content})
+    return out
+
+
+
+def build_reply(messages, chat_type, config):
+    """Very basic demo behavior for each type."""
+    # last user message
+    last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
+    if not last_user:
+        last_user = "(no user message)"
+
+    if chat_type == "support":
+        return (
+            "Support assistant here. I’m looking into your request...\n\n"
+            f"Summary of your issue: {last_user}\n"
+            "- Tip: You can provide order IDs or timestamps to speed things up.\n"
+            "Let me know if you have screenshots or logs."
+        )
+    elif chat_type == "analysis":
+        words = last_user.split()
+        return (
+            "Analysis assistant: quick take.\n\n"
+            f"- Word count: {len(words)}\n"
+            f"- First 8 tokens: {words[:8]}\n"
+            "Conclusion: provide a dataset sample and the hypothesis you want to test."
+        )
+    else:
+     
+
+
+        try:
+
+            result = run_async(mcp_search_async(last_user))
+            return str(result)
+
+        except Exception as e:
+            return f"Tool call failed: {e}"
+    
+import time
+
+def stream_text(text, chunk_size=16, delay=0.02):
+    """Yield plain text chunks (no SSE framing)."""
+    try:
+        for i in range(0, len(text), chunk_size):
+            yield text[i:i+chunk_size]
+            time.sleep(delay)  # demo pacing; remove in prod
+    except (GeneratorExit, BrokenPipeError):
+    # Client disconnected; stop silently
+        return
+
+from fastmcp import Client
+
+
+@app.post("/api/chat")
+def chat():
+    data = request.get_json(silent=True) or {}
+    
+      
+    chat_type = data.get("type") or "default"
+    if chat_type not in ALLOWED_CHAT_TYPES:
+        chat_type = "default"
+
+    messages = sanitize_messages(data.get("messages"))
+    config = data.get("config") if isinstance(data.get("config"), dict) else {}
+
+    # Basic guardrails
+    if not messages:
+        # It’s okay to continue, but show a friendly error
+        reply = "No messages received. Please say something to start the chat."
+    else:
+        reply = build_reply(messages, chat_type, config)
+
+    return Response(
+        stream_with_context(stream_text(reply)),
+        mimetype="text/plain; charset=utf-8",
+        headers={"Cache-Control": "no-store"}
+    )
+
+
+if __name__ == "__main__":
+    app.run(host="127.0.0.1", port=5000, debug=True)
+
+
+=== ./metadata_registry.py ===
+
+def get_all_schema_names(data):
+    """
+    Recursively collects all unique schema names from a given schema/attribute registry JSON.
+    Returns a set of schema names.
+    """
+    schema_names = set()
+    if isinstance(data, dict):
+        # Check if this is a schema_registry or attribute_metadata part
+        if "schema_registry" in data:
+            for schema in data["schema_registry"]:
+                schema_names.add(schema.get("schema_name"))
+        if "attribute_metadata" in data:
+            for attr in data["attribute_metadata"]:
+                # The attribute itself belongs to a schema:
+                schema_names.add(attr.get("schema_name"))
+                # If the attribute references a related schema (e.g. for relations), include that:
+                if attr.get("related_schema"):
+                    schema_names.add(attr.get("related_schema"))
+                # If parent_schema is present
+                if attr.get("parent_schema"):
+                    schema_names.add(attr.get("parent_schema"))
+        # Recursively traverse other keys (if any, for deeper nested JSONs)
+        for v in data.values():
+            schema_names.update(get_all_schema_names(v))
+    elif isinstance(data, list):
+        for item in data:
+            schema_names.update(get_all_schema_names(item))
+    # Otherwise, return empty set for primitives.
+    return schema_names
+
+
+=== ./agents.py ===
+import asyncio
+from agent import handle_actions, poll_lancedb_for_actions
+import lancedb
+from queue_imp import  AGENTS_URI, QUEUE_NAME
+
+
+async def queue_watcher(db, async_tbl):
+    while True:
+        actions = await poll_lancedb_for_actions(db, async_tbl)
+        _ = await handle_actions(db, async_tbl, actions=actions)
+
+async def get_db_tbl(): 
+    db = await lancedb.connect_async(AGENTS_URI)
+    async_tbl = await db.open_table(QUEUE_NAME)
+    return (db, async_tbl)
+
+async def main():
+    (db, async_tbl) = await get_db_tbl()
+
+    await asyncio.gather(
+        queue_watcher(db, async_tbl),
+        # ...other background tasks
+    )
+
+if __name__ == "__main__":
+    asyncio.run(main())
+
+
+=== ./mcp_test.py ===
+from fastmcp import Client
+import asyncio
+
+# Define the MCP server configuration
+CONFIG = {
+    "mcpServers": {
+        "aws-knowledge-mcp-server": { "url": "https://knowledge-mcp.global.api.aws"}
+    }
+}
+
+CACHE_TOOLS = {
+    "aws_kb_search": "aws___search_documentation"
+}
+
+
+CLIENT = Client(CONFIG)
+
+async def async_input(prompt: str = '') -> str:
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, input, prompt)
+
+
+
+async def list_tools(client): 
+    async with client:
+        try :
+            tools  = await client.list_tools()
+            for tool in tools:
+                print(tool.name)
+                print (f"         {tool.description}")
+        except Exception as e:
+            print(e)
+
+
+async def search_aws_kb (client, tool_name, user_input) -> str:
+    async with client:
+        try :
+            result = await client.call_tool(tool_name, {
+                "search_phrase": f"{user_input}"
+            })
+            import json
+            result = json.loads(result.content[0].text)['response']['payload']['content']['result']
+
+            return str(result)
+        
+        except Exception as e:
+            return str(e)
+        
+        
+async def main():
+
+#        await list_tools(CLIENT)
+
+
+    while True:
+
+        input_text = await async_input()
+        search_result = await search_aws_kb(CLIENT,CACHE_TOOLS['aws_kb_search'], input_text )
+        print(search_result)
+
+if __name__ == "__main__":
+    asyncio.run(main())
+
+=== ./baml_test.py ===
+from baml_client.async_client import b
+
+async def tell_a_joke(subject="foot") -> str:
+    return await b.JokeTeller(f"tell a joke about john using subject {subject}")
+
+
+
+
+=== ./store/agent_config.py ===
+import lancedb
+import json
+
+from .schemas import AGENTS_URI, AGENTS_CONFIG_NAME
+
+AGENTS_DB = lancedb.connect(AGENTS_URI)
+
+def create_agent_config(agent_id, agent_type, agent_description="", agents_metadata=None):
+    tbl = AGENTS_DB.open_table(AGENTS_CONFIG_NAME)
+    record = {
+        "agent_id": agent_id,
+        "agent_type": agent_type,
+        "agent_description": agent_description,
+        "agents_metadata": json.dumps(agents_metadata) if agents_metadata else None,
+    }
+    tbl.add(data=[record], mode="append")
+    print(f"AgentConfig for {agent_id} ({agent_type}) created.")
+
+def update_agent_config(agent_id, agent_type=None, agent_description=None, agents_metadata=None):
+    tbl = AGENTS_DB.open_table(AGENTS_CONFIG_NAME)
+    updates = {}
+    if agent_type is not None: updates["agent_type"] = agent_type
+    if agent_description is not None: updates["agent_description"] = agent_description
+    if agents_metadata is not None: updates["agents_metadata"] = json.dumps(agents_metadata)
+    if not updates:
+        print("No updates provided.")
+        return
+    count = tbl.update(where=f"agent_id == '{agent_id}'", updates=updates)
+    print(f"Updated {count} AgentConfig record(s) for {agent_id}.")
+
+def delete_agent_config(agent_id):
+    tbl = AGENTS_DB.open_table(AGENTS_CONFIG_NAME)
+    count = tbl.delete(where=f"agent_id == '{agent_id}'")
+    print(f"Deleted {count} AgentConfig record(s) for {agent_id}.")
+
+def list_agent_configs():
+    tbl = AGENTS_DB.open_table(AGENTS_CONFIG_NAME)
+    df = tbl.to_pandas()
+    if df.empty:
+        print("No agent configs found.")
+        return []
+    configs = []
+    for _, row in df.iterrows():
+        metadata = json.loads(row.agents_metadata or '{}')
+        print(f"agent_id={row.agent_id}, type={row.agent_type}, desc={row.agent_description}, metadata={metadata}")
+        configs.append({
+            "agent_id": row.agent_id,
+            "agent_type": row.agent_type,
+            "agent_description": row.agent_description,
+            "agents_metadata": metadata
+        })
+    return configs
+
+if __name__ == "__main__":
+    create_agent_config("agent1", "JokeAgent", "Tells jokes", {"subject": "python"})
+    list_agent_configs()
+
+
+=== ./store/action_queue.py ===
+
+import lancedb
+import uuid
+from datetime import datetime
+
+from schemas import AGENTS_URI, QUEUE_NAME
+
+AGENTS_DB = lancedb.connect(AGENTS_URI)
+
+
+# --------------------
+# Action Queue Management
+# --------------------
+
+
+def create_action(
+    action_type: str,
+    actor: str,
+    payload: str = None,
+    metadata: str = None,
+    urgency: str = "normal",
+    description: str = "",
+    processed: bool = False,
+    action_id: str = None,
+    created_at: str = None,
+):
+    queue_tbl = AGENTS_DB.open_table(QUEUE_NAME)
+    record = {
+        "action_id": action_id or str(uuid.uuid4()),
+        "type": action_type,
+        "created_at": created_at or datetime.now().isoformat(),
+        "actor": actor,
+        "processed": processed,
+        "urgency": urgency,
+        "description": description,
+        "payload": payload,
+        "metadata": metadata,
+    }
+    queue_tbl.add(data=[record], mode="append")
+    print(f"Action '{action_type}' for actor '{actor}' queued.")
+
+def list_actions():
+    queue_tbl = AGENTS_DB.open_table(QUEUE_NAME)
+    df = queue_tbl.to_pandas()
+    print(df)
+    return df.to_dict(orient="records")
+
+def delete_all_actions():
+    queue_tbl = AGENTS_DB.open_table(QUEUE_NAME)
+    queue_tbl.delete("1 == 1")
+
+if __name__ == "__main__":
+    create_action("create_agent", "user")
+
+    list_actions()
+    pass
+
+=== ./store/agent_state.py ===
+import lancedb
+import pyarrow as pa
+from datetime import datetime
+import json
+
+from schemas import AGENT_STATE_NAME, AGENTS_URI
+AGENTS_DB = lancedb.connect(AGENTS_URI)
+
+
+def upsert_agent_state(agent_id, status, iteration=None, result=None, context=None, history=None):
+    tbl = AGENTS_DB.open_table(AGENT_STATE_NAME)
+    now = datetime.now().isoformat()
+    rec = {
+        "agent_id": agent_id,
+        "status": status,
+        "iteration": iteration,
+        "result": json.dumps(result) if isinstance(result, (dict, list)) else result,
+        "last_updated": now,
+        "history": json.dumps(history) if history else None,
+        "context": json.dumps(context) if context else None,
+    }
+    tbl.add(data=[rec], mode="overwrite")
+    print(f"Agent {agent_id} state = {status}, iter {iteration}, saved at {now}")
+
+def get_agent_state(agent_id):
+    tbl = AGENTS_DB.open_table(AGENT_STATE_NAME)
+    df = tbl.to_pandas().query(f"agent_id == '{agent_id}'")
+    if df.empty:
+        return None
+    row = df.iloc[0]
+    return {
+        "agent_id": row.agent_id,
+        "status": row.status,
+        "iteration": row.iteration,
+        "result": json.loads(row.result) if row.result else None,
+        "last_updated": row.last_updated,
+        "history": json.loads(row.history) if row.history else [],
+        "context": json.loads(row.context) if row.context else {}
+    }
+
+def list_agent_states():
+    tbl = AGENTS_DB.open_table(AGENT_STATE_NAME)
+    df = tbl.to_pandas()
+    if df.empty:
+        return []
+    return [get_agent_state(row.agent_id) for _, row in df.iterrows()]
+
+=== ./store/schemas.py ===
+
+import pyarrow as pa
+import lancedb
+AGENTS_URI = "data/agents"
+
+AGENTS_CONFIG_NAME = "agents_config"
+AGENTS_CONFIG_SCHEMA = pa.schema([
+    pa.field("agent_id", pa.string(), nullable=False),
+    pa.field("agent_type", pa.string(), nullable=False),
+    pa.field("agent_description", pa.string(), nullable=True),
+    pa.field("agents_metadata", pa.string(), nullable=True),
+])
+
+
+QUEUE_NAME = "queue"
+QUEUE_SCHEMA = pa.schema([
+    pa.field("action_id", pa.string(), nullable=False),
+    pa.field("type", pa.string(), nullable=False),
+    pa.field("created_at", pa.string(), nullable=False),
+    pa.field("actor", pa.string(), nullable=False),
+    pa.field("processed", pa.bool_(), nullable=False),
+    pa.field("urgency", pa.string()),
+    pa.field("description", pa.string()),
+    pa.field("payload", pa.string()),
+    pa.field("metadata", pa.string()),
+])
+
+
+AGENT_STATE_NAME = "agent_state"
+
+AGENT_STATE_SCHEMA = pa.schema([
+    pa.field("agent_id", pa.string(), nullable=False),
+    pa.field("status", pa.string(), nullable=False),
+    pa.field("iteration", pa.int32(), nullable=True),
+    pa.field("result", pa.string(), nullable=True),        # could be JSON string
+    pa.field("last_updated", pa.string(), nullable=True),
+    pa.field("history", pa.string(), nullable=True),        # JSON list or log
+    pa.field("context", pa.string(), nullable=True),        # agentic data
+])
+
+
+
+
+
+AGENTS_DB = lancedb.connect(AGENTS_URI)
+
+
+# --------------------
+# Schema management
+# --------------------
+
+
+
+def create_agent_state_schema():
+    print("creating agent state schema")
+    AGENTS_DB.create_table(AGENT_STATE_NAME, schema=AGENT_STATE_SCHEMA)
+
+def delete_agent_state_schema():
+    print("deleting agent state schema")
+    AGENTS_DB.drop_table(AGENT_STATE_NAME)
+
+
+def create_agents_config_schema():
+    print("creating agent config schema")
+    AGENTS_DB.create_table(AGENTS_CONFIG_NAME, schema=AGENTS_CONFIG_SCHEMA)
+
+def delete_agents_schema():
+    print("deleting agent config schema")
+    AGENTS_DB.drop_table(AGENTS_CONFIG_NAME)
+
+def create_queue_schema():
+    print("creating_queue_schema")
+    AGENTS_DB.create_table(QUEUE_NAME, schema=QUEUE_SCHEMA)
+
+def delete_queue_schema():
+    print("deleting_queue_schema")
+    AGENTS_DB.drop_table(QUEUE_NAME)
+
+if __name__ == '__main__':
+    create_agents_config_schema()
+
+
+
+

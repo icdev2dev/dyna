@@ -6,6 +6,7 @@ client<llm> CustomO3Mini {
   options {
     model "o3-mini"
     api_key env.OPENAI_API_KEY
+    temparature 1.0
   }
 }
 
@@ -24,6 +25,7 @@ client<llm> CustomGPT4oMini {
   options {
     model "gpt-4o-mini"
     api_key env.OPENAI_API_KEY
+    temperature 1.0
   }
 }
 

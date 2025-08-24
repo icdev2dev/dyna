@@ -1,0 +1,4 @@
+$8b215b0c-d818-4c66-b274-5a2bc2b110a0²Ú)	action_id ÿÿÿÿÿÿÿÿÿ*string8Zdefault&type ÿÿÿÿÿÿÿÿÿ*string8Zdefault,
+created_at ÿÿÿÿÿÿÿÿÿ*string8Zdefault'actor ÿÿÿÿÿÿÿÿÿ*string8Zdefault)	processed ÿÿÿÿÿÿÿÿÿ*bool8Zdefault+urgency ÿÿÿÿÿÿÿÿÿ*string08Zdefault/description ÿÿÿÿÿÿÿÿÿ*string08Zdefault+payload ÿÿÿÿÿÿÿÿÿ*string08Zdefault,metadata ÿÿÿÿÿÿÿÿÿ*string08Zdefault"!
+lance.auto_cleanup.interval20"'
+lance.auto_cleanup.older_than14days

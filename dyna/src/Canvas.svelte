@@ -91,6 +91,38 @@
             return id;
         }
 
+        if (config.kind === 'agentsList') {
+            const win = {
+                id,
+                kind: 'agentsList',
+                title: config.title ?? 'Agent List',
+                value: config.value ?? { entities: [] },
+                position: pos,
+                size,
+                z: ++zCounter,
+                persist
+                };
+
+            windows = [...windows, win];
+            return id;
+        }
+
+        if (config.kind === 'orderEditor') {
+            const win = {
+                id,
+                kind: 'orderEditor',
+                title: config.title ?? 'Order Editor',
+                value: config.value ?? { entities: [] },
+                position: pos,
+                size,
+                z: ++zCounter,
+                persist
+                };
+
+            windows = [...windows, win];
+            return id;
+        }
+
 
         // NEW: plugin branch
         if (config.kind === 'plugin') {

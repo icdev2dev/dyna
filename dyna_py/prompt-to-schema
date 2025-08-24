@@ -1,0 +1,52 @@
+{
+  "kind": "form",
+  "persist": "keep",
+  "position": {
+    "x": 40,
+    "y": 40
+  },
+  "schema": [
+    {
+      "label": "Title",
+      "name": "title",
+      "type": "text"
+    },
+    {
+      "label": "Price",
+      "name": "price",
+      "type": "number"
+    },
+    {
+      "label": "Category",
+      "name": "category",
+      "options": [
+        {
+          "label": "A",
+          "value": "A"
+        },
+        {
+          "label": "B",
+          "value": "B"
+        },
+        {
+          "label": "C",
+          "value": "C"
+        }
+      ],
+      "type": "select"
+    },
+    {
+      "label": "Active",
+      "name": "active",
+      "type": "checkbox"
+    }
+  ],
+  "size": {
+    "h": 280,
+    "w": 420
+  },
+  "title": "Product Form",
+  "value": {
+    "active": true
+  }
+}

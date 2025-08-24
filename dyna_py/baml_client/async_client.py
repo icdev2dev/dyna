@@ -73,6 +73,13 @@ class BamlAsyncClient:
     def parse_stream(self):
       return self.__llm_stream_parser
     
+    async def JokeTeller(self, arg: str,
+        baml_options: BamlCallOptions = {},
+    ) -> str:
+        result = await self.__options.merge_options(baml_options).call_function_async(function_name="JokeTeller", args={
+            "arg": arg,
+        })
+        return typing.cast(str, result.cast_to(types, types, stream_types, False, __runtime__))
     
 
 
@@ -82,6 +89,18 @@ class BamlStreamClient:
     def __init__(self, options: DoNotUseDirectlyCallManager):
         self.__options = options
 
+    def JokeTeller(self, arg: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.BamlStream[str, str]:
+        ctx, result = self.__options.merge_options(baml_options).create_async_stream(function_name="JokeTeller", args={
+            "arg": arg,
+        })
+        return baml_py.BamlStream[str, str](
+          result,
+          lambda x: typing.cast(str, x.cast_to(types, types, stream_types, True, __runtime__)),
+          lambda x: typing.cast(str, x.cast_to(types, types, stream_types, False, __runtime__)),
+          ctx,
+        )
     
 
 class BamlHttpRequestClient:
@@ -90,6 +109,13 @@ class BamlHttpRequestClient:
     def __init__(self, options: DoNotUseDirectlyCallManager):
         self.__options = options
 
+    async def JokeTeller(self, arg: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="JokeTeller", args={
+            "arg": arg,
+        }, mode="request")
+        return result
     
 
 class BamlHttpStreamRequestClient:
@@ -98,6 +124,13 @@ class BamlHttpStreamRequestClient:
     def __init__(self, options: DoNotUseDirectlyCallManager):
         self.__options = options
 
+    async def JokeTeller(self, arg: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="JokeTeller", args={
+            "arg": arg,
+        }, mode="stream")
+        return result
     
 
 b = BamlAsyncClient(DoNotUseDirectlyCallManager({}))

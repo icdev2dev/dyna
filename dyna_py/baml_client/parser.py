@@ -22,6 +22,12 @@ class LlmResponseParser:
     def __init__(self, options: DoNotUseDirectlyCallManager):
         self.__options = options
 
+    def JokeTeller(
+        self, llm_response: str, baml_options: BamlCallOptions = {},
+    ) -> str:
+        result = self.__options.merge_options(baml_options).parse_response(function_name="JokeTeller", llm_response=llm_response, mode="request")
+        return typing.cast(str, result)
+
     
 
 class LlmStreamParser:
@@ -29,5 +35,11 @@ class LlmStreamParser:
 
     def __init__(self, options: DoNotUseDirectlyCallManager):
         self.__options = options
+
+    def JokeTeller(
+        self, llm_response: str, baml_options: BamlCallOptions = {},
+    ) -> str:
+        result = self.__options.merge_options(baml_options).parse_response(function_name="JokeTeller", llm_response=llm_response, mode="stream")
+        return typing.cast(str, result)
 
     

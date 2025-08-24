@@ -102,8 +102,38 @@
                             size: { w: 420, h: 260 }, 
                             position: { x: 80, y: 80 } 
                         }) 
-                        } > Open Hello Plugin </button> </div>
+                        } > Open Hello Plugin </button> 
 
+        <button type="button" onclick={() =>
+        controller?.spawn({
+            kind: 'agentsList',
+            title: 'All Agent Configs',
+            persist: 'keep',
+            size: { w: 740, h: 420 },
+            position: { x: 120, y: 120 }
+        })}
+        >
+
+        List Agent Configs
+        </button>
+
+
+
+        <button
+            type="button"
+            onclick={() =>
+            controller?.spawn({
+            kind: 'orderEditor',
+            title: 'Order & Rules Editor',
+            persist: 'destroy', // recommended until you add reopen support for this kind
+            size: { w: 960, h: 600 },
+            position: { x: 120, y: 100 }
+            })
+            }
+        >
+            Open Order Editor
+        </button>
+</div>
 <div class="app"> 
     <div class="toolbar"> 
     </div> 

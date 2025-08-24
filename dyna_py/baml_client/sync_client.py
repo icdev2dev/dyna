@@ -85,6 +85,13 @@ class BamlSyncClient:
     def parse_stream(self):
       return self.__llm_stream_parser
     
+    def JokeTeller(self, arg: str,
+        baml_options: BamlCallOptions = {},
+    ) -> str:
+        result = self.__options.merge_options(baml_options).call_function_sync(function_name="JokeTeller", args={
+            "arg": arg,
+        })
+        return typing.cast(str, result.cast_to(types, types, stream_types, False, __runtime__))
     
 
 
@@ -94,6 +101,18 @@ class BamlStreamClient:
     def __init__(self, options: DoNotUseDirectlyCallManager):
         self.__options = options
 
+    def JokeTeller(self, arg: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.BamlSyncStream[str, str]:
+        ctx, result = self.__options.merge_options(baml_options).create_sync_stream(function_name="JokeTeller", args={
+            "arg": arg,
+        })
+        return baml_py.BamlSyncStream[str, str](
+          result,
+          lambda x: typing.cast(str, x.cast_to(types, types, stream_types, True, __runtime__)),
+          lambda x: typing.cast(str, x.cast_to(types, types, stream_types, False, __runtime__)),
+          ctx,
+        )
     
 
 class BamlHttpRequestClient:
@@ -102,6 +121,13 @@ class BamlHttpRequestClient:
     def __init__(self, options: DoNotUseDirectlyCallManager):
         self.__options = options
 
+    def JokeTeller(self, arg: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        result = self.__options.merge_options(baml_options).create_http_request_sync(function_name="JokeTeller", args={
+            "arg": arg,
+        }, mode="request")
+        return result
     
 
 class BamlHttpStreamRequestClient:
@@ -110,6 +136,13 @@ class BamlHttpStreamRequestClient:
     def __init__(self, options: DoNotUseDirectlyCallManager):
         self.__options = options
 
+    def JokeTeller(self, arg: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        result = self.__options.merge_options(baml_options).create_http_request_sync(function_name="JokeTeller", args={
+            "arg": arg,
+        }, mode="stream")
+        return result
     
 
 b = BamlSyncClient(DoNotUseDirectlyCallManager({}))

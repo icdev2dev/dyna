@@ -1,6 +1,0 @@
-$1c5cecca-db0b-4ca3-99aa-76a880544f95²¶'project ÿÿÿÿÿÿÿÿÿ*struct0Zdefault"
-project_id*int3208Zdefaultname*string08Zdefault%prompts*list.struct08Zdefaultitem *struct0Zdefaultid *int3208Zdefaulttext *string08Zdefault!metadata *struct0Zdefault%
-created_by *string08Zdefault-
-created_at	 *timestamp:ms:-08Zdefault"'
-lance.auto_cleanup.older_than14days"!
-lance.auto_cleanup.interval20

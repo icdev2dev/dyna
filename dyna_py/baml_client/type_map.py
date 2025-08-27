@@ -16,5 +16,20 @@ from . import stream_types
 
 type_map = {
 
+    "types.MonikerData": types.MonikerData,
+    "stream_types.MonikerData": stream_types.MonikerData,
+
+    "types.MonikerGuidance": types.MonikerGuidance,
+    "stream_types.MonikerGuidance": stream_types.MonikerGuidance,
+
+    "types.MonikerState": types.MonikerState,
+    "stream_types.MonikerState": stream_types.MonikerState,
+
+    "types.MonikerStepFrameIn": types.MonikerStepFrameIn,
+    "stream_types.MonikerStepFrameIn": stream_types.MonikerStepFrameIn,
+
+    "types.MonikerStepFrameOut": types.MonikerStepFrameOut,
+    "stream_types.MonikerStepFrameOut": stream_types.MonikerStepFrameOut,
+
 
 }

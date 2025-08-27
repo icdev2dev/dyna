@@ -41,8 +41,34 @@ def all_succeeded(checks: typing.Dict[CheckName, Check]) -> bool:
 # #########################################################################
 
 # #########################################################################
-# Generated classes (0)
+# Generated classes (5)
 # #########################################################################
+
+class MonikerData(BaseModel):
+    topic: typing.Optional[str] = None
+
+class MonikerGuidance(BaseModel):
+    topic: typing.Optional[str] = None
+    style: typing.Optional[str] = None
+
+class MonikerState(BaseModel):
+    topic: typing.Optional[str] = None
+    last_style: typing.Optional[str] = None
+    last_output: typing.Optional[str] = None
+
+class MonikerStepFrameIn(BaseModel):
+    step: str
+    state: "MonikerState"
+    guidance: typing.Optional["MonikerGuidance"] = None
+
+class MonikerStepFrameOut(BaseModel):
+    step: str
+    state: "MonikerState"
+    next_step: str
+    text: str
+    data: "MonikerData"
+    done: bool
+    notes: typing.Optional[str] = None
 
 # #########################################################################
 # Generated type aliases (0)

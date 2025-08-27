@@ -5,7 +5,7 @@ from flask import request
 
 
 from .static_endpoints import serve_plugin_file
-from .agents_endpoints import list_agents_endpoint
+from .agents_endpoints import list_agents_endpoint, list_sessions_for_agent
 
 from .chat_api import chat_endpoint
 from .form_api import prompt_to_schema_endpoint
@@ -42,6 +42,8 @@ MAP_HTTP_FUNCS = [
     ["/api/list-agent-configs",list_agents_endpoint , ['GET']],
     ["/api/prompt-to-schema", prompt_to_schema_endpoint, ['POST']],
     ["/api/chat", chat_endpoint, ['POST']],
+    ["/api/list-sessions-for-agent",list_sessions_for_agent , ['GET']],
+    
 
     # ...add more
 ]

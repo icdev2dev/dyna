@@ -80,6 +80,13 @@ class BamlAsyncClient:
             "arg": arg,
         })
         return typing.cast(str, result.cast_to(types, types, stream_types, False, __runtime__))
+    async def TellAJoke(self, frame: types.MonikerStepFrameIn,task: str,
+        baml_options: BamlCallOptions = {},
+    ) -> types.MonikerStepFrameOut:
+        result = await self.__options.merge_options(baml_options).call_function_async(function_name="TellAJoke", args={
+            "frame": frame,"task": task,
+        })
+        return typing.cast(types.MonikerStepFrameOut, result.cast_to(types, types, stream_types, False, __runtime__))
     
 
 
@@ -101,6 +108,18 @@ class BamlStreamClient:
           lambda x: typing.cast(str, x.cast_to(types, types, stream_types, False, __runtime__)),
           ctx,
         )
+    def TellAJoke(self, frame: types.MonikerStepFrameIn,task: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.BamlStream[stream_types.MonikerStepFrameOut, types.MonikerStepFrameOut]:
+        ctx, result = self.__options.merge_options(baml_options).create_async_stream(function_name="TellAJoke", args={
+            "frame": frame,"task": task,
+        })
+        return baml_py.BamlStream[stream_types.MonikerStepFrameOut, types.MonikerStepFrameOut](
+          result,
+          lambda x: typing.cast(stream_types.MonikerStepFrameOut, x.cast_to(types, types, stream_types, True, __runtime__)),
+          lambda x: typing.cast(types.MonikerStepFrameOut, x.cast_to(types, types, stream_types, False, __runtime__)),
+          ctx,
+        )
     
 
 class BamlHttpRequestClient:
@@ -116,6 +135,13 @@ class BamlHttpRequestClient:
             "arg": arg,
         }, mode="request")
         return result
+    async def TellAJoke(self, frame: types.MonikerStepFrameIn,task: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="TellAJoke", args={
+            "frame": frame,"task": task,
+        }, mode="request")
+        return result
     
 
 class BamlHttpStreamRequestClient:
@@ -129,6 +155,13 @@ class BamlHttpStreamRequestClient:
     ) -> baml_py.baml_py.HTTPRequest:
         result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="JokeTeller", args={
             "arg": arg,
+        }, mode="stream")
+        return result
+    async def TellAJoke(self, frame: types.MonikerStepFrameIn,task: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="TellAJoke", args={
+            "frame": frame,"task": task,
         }, mode="stream")
         return result
     

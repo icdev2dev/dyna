@@ -1,7 +1,43 @@
 
 import pyarrow as pa
 import lancedb
-AGENTS_URI = "data/agents"
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
+AGENTS_URI = os.getenv('AGENTS_URI')
+AGENTS_DB = lancedb.connect(AGENTS_URI)
+
+
+AGENT_STEPS_NAME = "agent_steps"
+
+AGENT_STEPS_SCHEMA = pa.schema([
+    pa.field("id", pa.string(), nullable=False),             # uuid per row
+    pa.field("created_at", pa.string(), nullable=False),     # ISO timestamp
+    pa.field("agent_id", pa.string(), nullable=False),
+    pa.field("session_id", pa.string(), nullable=True),      # nullable for now
+    pa.field("iteration", pa.int32(), nullable=False),       # runner’s counter
+    pa.field("step_token", pa.string(), nullable=True),      # future: moniker step (string)
+    pa.field("next_step_token", pa.string(), nullable=True), # future: moniker next step (string)
+    pa.field("status", pa.string(), nullable=True),          # "ok" | "error" | "info"
+    pa.field("text", pa.string(), nullable=True),            # human output
+    pa.field("data", pa.string(), nullable=True),            # JSON string (optional)
+    pa.field("state", pa.string(), nullable=True),           # JSON string (post-step state)
+    pa.field("guidance", pa.string(), nullable=True),        # JSON string (applied guidance)
+    pa.field("notes", pa.string(), nullable=True),
+    pa.field("latency_ms", pa.int32(), nullable=True),
+    pa.field("error", pa.string(), nullable=True),
+])
+
+def create_agent_steps_schema():
+    print("creating agent_steps_schema")
+    AGENTS_DB.create_table(AGENT_STEPS_NAME, schema=AGENT_STEPS_SCHEMA)
+
+def delete_agent_steps_schema():
+    print("deleting agent_steps_schema")
+    AGENTS_DB.drop_table(AGENT_STEPS_NAME)
+
+
 
 AGENTS_CONFIG_NAME = "agents_config"
 AGENTS_CONFIG_SCHEMA = pa.schema([
@@ -23,6 +59,7 @@ QUEUE_SCHEMA = pa.schema([
     pa.field("description", pa.string()),
     pa.field("payload", pa.string()),
     pa.field("metadata", pa.string()),
+    pa.field("session_id", pa.string(), nullable=True),  # NEW
 ])
 
 
@@ -30,6 +67,7 @@ AGENT_STATE_NAME = "agent_state"
 
 AGENT_STATE_SCHEMA = pa.schema([
     pa.field("agent_id", pa.string(), nullable=False),
+    pa.field("session_id", pa.string(), nullable=True),   # NEW
     pa.field("status", pa.string(), nullable=False),
     pa.field("iteration", pa.int32(), nullable=True),
     pa.field("result", pa.string(), nullable=True),        # could be JSON string
@@ -42,7 +80,6 @@ AGENT_STATE_SCHEMA = pa.schema([
 
 
 
-AGENTS_DB = lancedb.connect(AGENTS_URI)
 
 
 # --------------------
@@ -77,6 +114,11 @@ def delete_queue_schema():
     AGENTS_DB.drop_table(QUEUE_NAME)
 
 if __name__ == '__main__':
-    create_agents_config_schema()
+    print(AGENTS_DB.table_names())
+
+    create_agent_steps_schema()
+    print(AGENTS_DB.table_names())
+    
+#    create_agents_config_schema()
 
 

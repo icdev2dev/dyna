@@ -123,6 +123,19 @@
             return id;
         }
 
+         if (config.kind === 'agentRuns') { 
+            const win = { 
+                id, 
+                kind: 'agentRuns', 
+                title: config.title ?? 'Agent Runs', 
+                filters: (config.filters && typeof config.filters === 'object') ? config.filters : { agent_id: '', status: '', q: '' }, 
+                position: pos, 
+                size, 
+                z: ++zCounter, 
+                persist 
+            }; 
+            windows = [...windows, win]; 
+            return id; } 
 
         // NEW: plugin branch
         if (config.kind === 'plugin') {
@@ -262,15 +275,50 @@
             promptText = ''; 
         } 
     }
+
+
+
+
+
+
+
+function handleShowAgentRuns(e) { 
+    const agent_id = e?.detail?.agent_id; 
+    if (!agent_id) return; 
+    spawn({ 
+        kind: 'agentRuns', 
+        title: `Runs – ${agent_id}`, 
+        persist: 'keep', 
+        size: { w: 900, h: 520 }, 
+        filters: { agent_id, status: '', q: '' } 
+    }); 
+} 
+$effect(() => { 
+    if (!windowsLayerEl) return; 
+    const h = (ev) => handleShowAgentRuns(ev); 
+    windowsLayerEl.addEventListener('showAgentRuns', h); 
+    return () => windowsLayerEl.removeEventListener('showAgentRuns', h); 
+});
+
+
+
+
 </script> 
 
 
 <div class="canvas" bind:this={canvasEl}> 
-    <div class="windows" bind:this={windowsLayerEl}>
+    <div class="windows" bind:this={windowsLayerEl} >
         {#each windows as w (w.id)}
             {@const Renderer = WINDOW_RENDERERS[w.kind]} 
             {#if Renderer} 
-                <Renderer w={w} onFocus={onFocus} onRequestClose={onRequestClose} onSubmit={onSubmit} transitions={transitions} /> 
+                <Renderer 
+                    w={w} 
+                    onFocus={onFocus} 
+                    onRequestClose={onRequestClose} 
+                    onSubmit={onSubmit} 
+                    transitions={transitions}
+                    on:showAgentRuns={handleShowAgentRuns} 
+                    /> 
             {:else} 
                 <div class="window-unknown" style={`z-index:${w.z}`}> Unknown window kind: {w.kind} </div> 
             {/if}

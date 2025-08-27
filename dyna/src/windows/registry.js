@@ -4,6 +4,8 @@ import RenderMetadata from './RenderMetadata.svelte';
 import RenderPlugin from '../RenderPlugin.svelte';
 import RenderAgentsList from './RenderAgentsList.svelte';
 import RenderOrderEditor from './RenderOrderEditor.svelte';
+import RenderAgentRuns from './RenderAgentRuns.svelte';
+
 
 export const WINDOW_RENDERERS = {
     form: RenderForm,
@@ -11,5 +13,6 @@ export const WINDOW_RENDERERS = {
     metadata: RenderMetadata,
     plugin: RenderPlugin,
     agentsList: RenderAgentsList,
-    orderEditor: RenderOrderEditor  
+    orderEditor: RenderOrderEditor,
+    agentRuns: RenderAgentRuns  
 };

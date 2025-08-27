@@ -1,3 +1,10 @@
+
+export AGENTS_URI to a relevant path
+set your API_KEYS
+
+
+
+
 Modern Async Agent System with Action Queue: Architectural Summary
 # Purpose
 Design an extensible, observable, and robust system where:

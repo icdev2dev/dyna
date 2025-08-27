@@ -107,14 +107,14 @@
         <button type="button" onclick={() =>
         controller?.spawn({
             kind: 'agentsList',
-            title: 'All Agent Configs',
+            title: 'Available Agents',
             persist: 'keep',
             size: { w: 740, h: 420 },
             position: { x: 120, y: 120 }
         })}
         >
 
-        List Agent Configs
+        Available Agents
         </button>
 
 
@@ -122,17 +122,21 @@
         <button
             type="button"
             onclick={() =>
-            controller?.spawn({
-            kind: 'orderEditor',
-            title: 'Order & Rules Editor',
-            persist: 'destroy', // recommended until you add reopen support for this kind
-            size: { w: 960, h: 600 },
-            position: { x: 120, y: 100 }
-            })
-            }
+                controller?.spawn({
+                    kind: 'agentRuns',
+                    title: 'Agent Runs',
+                    persist: 'keep',
+                    size: { w: 900, h: 520 },
+                    position: { x: 160, y: 120 },
+                    filters: { agent_id: '', status: '', q: '' }
+                })
+            } 
         >
-            Open Order Editor
-        </button>
+
+            List Agent Runs
+        </button> 
+
+
 </div>
 <div class="app"> 
     <div class="toolbar"> 

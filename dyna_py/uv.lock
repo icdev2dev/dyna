@@ -360,6 +360,7 @@ dependencies = [
     { name = "lancedb" },
     { name = "openai" },
     { name = "pandas" },
+    { name = "python-dotenv" },
     { name = "uuid" },
 ]
 
@@ -373,6 +374,7 @@ requires-dist = [
     { name = "lancedb", specifier = ">=0.24.3" },
     { name = "openai", specifier = ">=1.99.9" },
     { name = "pandas", specifier = ">=2.3.1" },
+    { name = "python-dotenv", specifier = ">=1.1.1" },
     { name = "uuid", specifier = ">=1.30" },
 ]
 

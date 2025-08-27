@@ -5,33 +5,12 @@ from datetime import datetime
 import uuid
 import json
 
+from store.schemas import AGENTS_URI, AGENTS_CONFIG_NAME, QUEUE_NAME
 # --------------------
 # Database Setup
 # --------------------
-AGENTS_URI = "data/agents"
+
 AGENTS_DB = lancedb.connect(AGENTS_URI)
-
-AGENTS_CONFIG_NAME = "agents_config"
-QUEUE_NAME = "queue"
-
-AGENTS_CONFIG_SCHEMA = pa.schema([
-    pa.field("agent_id", pa.string(), nullable=False),
-    pa.field("agent_type", pa.string(), nullable=False),
-    pa.field("agent_description", pa.string(), nullable=True),
-    pa.field("agents_metadata", pa.string(), nullable=True),
-])
-
-QUEUE_SCHEMA = pa.schema([
-    pa.field("action_id", pa.string(), nullable=False),
-    pa.field("type", pa.string(), nullable=False),
-    pa.field("created_at", pa.string(), nullable=False),
-    pa.field("actor", pa.string(), nullable=False),
-    pa.field("processed", pa.bool_(), nullable=False),
-    pa.field("urgency", pa.string()),
-    pa.field("description", pa.string()),
-    pa.field("payload", pa.string()),
-    pa.field("metadata", pa.string()),
-])
 
 
 # --------------------
@@ -96,6 +75,7 @@ def create_action(
     processed: bool = False,
     action_id: str = None,
     created_at: str = None,
+    session_id: str | None = None
 ):
     queue_tbl = AGENTS_DB.open_table(QUEUE_NAME)
     record = {
@@ -108,6 +88,7 @@ def create_action(
         "description": description,
         "payload": payload,
         "metadata": metadata,
+        "session_id": session_id,
     }
     queue_tbl.add(data=[record], mode="append")
     print(f"Action '{action_type}' for actor '{actor}' queued.")
@@ -125,46 +106,53 @@ def delete_all_actions():
 # --------------------
 # Helper: Agent action creators
 # --------------------
-def agent_create(agent_id, actor, initial_subject="foot"):
+def agent_create(agent_id, actor, initial_subject="foot", session_id: str | None = None):
+    sid = session_id or str(uuid.uuid4())
     payload = json.dumps({
         "agent_id": agent_id,
-        "initial_subject": initial_subject
+        "initial_subject": initial_subject,
+        "session_id": sid,
     })
     create_action(
         action_type="create_agent",
         actor=actor,
-        payload=payload
+        payload=payload,
+        session_id=sid,
     )
-    print(f"CreateAgent action for {agent_id} queued with initial_subject: {initial_subject}")
+    print(f"CreateAgent action for {agent_id} queued with initial_subject: {initial_subject}, session_id: {sid}")
 
-def agent_interrupt(agent_id, actor, guidance: dict):
+    return sid
+
+def agent_interrupt(agent_id, actor, guidance: dict, session_id: str | None = None):
     payload = json.dumps({
         "agent_id": agent_id,
+        "session_id": session_id,
         "guidance": guidance
     })
     create_action(
         action_type="agent_interrupt",
         actor=actor,
-        payload=payload
+        payload=payload,
+        session_id=session_id,
     )
-    print(f"Interrupt action for {agent_id} queued with guidance: {guidance}")
+    print(f"Interrupt action for {agent_id}/{session_id} queued with guidance: {guidance}")
+    
 
-def agent_destroy_action(agent_id, actor, reason=None):
-    payload = json.dumps({"agent_id": agent_id, "reason": reason})
-    create_action(action_type="agent_destroy", actor=actor, payload=payload)
+def agent_destroy_action(agent_id, actor, reason=None,  session_id: str | None = None):
+    payload = json.dumps({"agent_id": agent_id, "reason": reason, "session_id": session_id})
+    create_action(action_type="agent_destroy", actor=actor, payload=payload, session_id=session_id)
 
+def agent_pause_action(agent_id, actor, reason=None, session_id: str | None = None):
+    payload = json.dumps({"agent_id": agent_id, "reason": reason, "session_id": session_id})
+    create_action(action_type="agent_pause", actor=actor, payload=payload, session_id=session_id)
 
-def agent_pause_action(agent_id, actor, reason=None):
-    payload = json.dumps({"agent_id": agent_id, "reason": reason})
-    create_action(action_type="agent_pause", actor=actor, payload=payload)
-
-def agent_resume_action(agent_id, actor):
-    payload = json.dumps({"agent_id": agent_id})
-    create_action(action_type="agent_resume", actor=actor, payload=payload)
-
+def agent_resume_action(agent_id, actor, session_id: str | None = None):
+    payload = json.dumps({"agent_id": agent_id, "session_id": session_id})
+    create_action(action_type="agent_resume", actor=actor, payload=payload, session_id=session_id)
 # --------------------
 # Async Helper
 # --------------------
+
 async def mark_action_processed_async(async_tbl, action_id: str):
     await async_tbl.update(where=f'action_id == "{action_id}"', updates={"processed": True})
 

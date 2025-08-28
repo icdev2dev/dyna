@@ -23,7 +23,7 @@ class StreamState(BaseModel, typing.Generic[StreamStateValueT]):
     value: StreamStateValueT
     state: typing_extensions.Literal["Pending", "Incomplete", "Complete"]
 # #########################################################################
-# Generated classes (5)
+# Generated classes (7)
 # #########################################################################
 
 class MonikerData(BaseModel):
@@ -51,6 +51,19 @@ class MonikerStepFrameOut(BaseModel):
     data: typing.Optional["MonikerData"] = None
     done: typing.Optional[bool] = None
     notes: typing.Optional[str] = None
+
+class StepFrameIn(BaseModel):
+    context: typing.Optional[str] = None
+    guidance: typing.Optional[str] = None
+
+class StepFrameOut(BaseModel):
+    status: typing.Optional[types.GenericStepOutStatus] = None
+    control: typing.Optional[types.GenericStepOutControl] = None
+    reason: typing.Optional[str] = None
+    hint: typing.Optional[str] = None
+    text: typing.Optional[str] = None
+    payload: typing.Optional[str] = None
+    context_delta: typing.Optional[str] = None
 
 # #########################################################################
 # Generated type aliases (0)

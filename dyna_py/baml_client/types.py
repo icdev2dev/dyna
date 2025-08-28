@@ -37,11 +37,21 @@ def get_checks(checks: typing.Dict[CheckName, Check]) -> typing.List[Check]:
 def all_succeeded(checks: typing.Dict[CheckName, Check]) -> bool:
     return all(check.status == "succeeded" for check in get_checks(checks))
 # #########################################################################
-# Generated enums (0)
+# Generated enums (2)
 # #########################################################################
 
+class GenericStepOutControl(str, Enum):
+    CONTINUE = "CONTINUE"
+    PAUSE = "PAUSE"
+    STOP = "STOP"
+    DONE = "DONE"
+
+class GenericStepOutStatus(str, Enum):
+    OK = "OK"
+    ERR = "ERR"
+
 # #########################################################################
-# Generated classes (5)
+# Generated classes (7)
 # #########################################################################
 
 class MonikerData(BaseModel):
@@ -69,6 +79,19 @@ class MonikerStepFrameOut(BaseModel):
     data: "MonikerData"
     done: bool
     notes: typing.Optional[str] = None
+
+class StepFrameIn(BaseModel):
+    context: str
+    guidance: str
+
+class StepFrameOut(BaseModel):
+    status: typing.Optional[GenericStepOutStatus] = None
+    control: typing.Optional[GenericStepOutControl] = None
+    reason: typing.Optional[str] = None
+    hint: typing.Optional[str] = None
+    text: typing.Optional[str] = None
+    payload: typing.Optional[str] = None
+    context_delta: typing.Optional[str] = None
 
 # #########################################################################
 # Generated type aliases (0)

@@ -31,5 +31,15 @@ type_map = {
     "types.MonikerStepFrameOut": types.MonikerStepFrameOut,
     "stream_types.MonikerStepFrameOut": stream_types.MonikerStepFrameOut,
 
+    "types.StepFrameIn": types.StepFrameIn,
+    "stream_types.StepFrameIn": stream_types.StepFrameIn,
+
+    "types.StepFrameOut": types.StepFrameOut,
+    "stream_types.StepFrameOut": stream_types.StepFrameOut,
+
+
+    "types.GenericStepOutControl": types.GenericStepOutControl,
+
+    "types.GenericStepOutStatus": types.GenericStepOutStatus,
 
 }

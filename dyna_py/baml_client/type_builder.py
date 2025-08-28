@@ -20,18 +20,26 @@ from .globals import DO_NOT_USE_DIRECTLY_UNLESS_YOU_KNOW_WHAT_YOURE_DOING_RUNTIM
 class TypeBuilder(type_builder.TypeBuilder):
     def __init__(self):
         super().__init__(classes=set(
-          ["MonikerData","MonikerGuidance","MonikerState","MonikerStepFrameIn","MonikerStepFrameOut",]
+          ["MonikerData","MonikerGuidance","MonikerState","MonikerStepFrameIn","MonikerStepFrameOut","StepFrameIn","StepFrameOut",]
         ), enums=set(
-          []
+          ["GenericStepOutControl","GenericStepOutStatus",]
         ), runtime=DO_NOT_USE_DIRECTLY_UNLESS_YOU_KNOW_WHAT_YOURE_DOING_RUNTIME)
 
     # #########################################################################
-    # Generated enums 0
+    # Generated enums 2
     # #########################################################################
+
+    @property
+    def GenericStepOutControl(self) -> "GenericStepOutControlViewer":
+        return GenericStepOutControlViewer(self)
+
+    @property
+    def GenericStepOutStatus(self) -> "GenericStepOutStatusViewer":
+        return GenericStepOutStatusViewer(self)
 
 
     # #########################################################################
-    # Generated classes 5
+    # Generated classes 7
     # #########################################################################
 
     @property
@@ -54,15 +62,115 @@ class TypeBuilder(type_builder.TypeBuilder):
     def MonikerStepFrameOut(self) -> "MonikerStepFrameOutViewer":
         return MonikerStepFrameOutViewer(self)
 
+    @property
+    def StepFrameIn(self) -> "StepFrameInViewer":
+        return StepFrameInViewer(self)
+
+    @property
+    def StepFrameOut(self) -> "StepFrameOutViewer":
+        return StepFrameOutViewer(self)
+
 
 
 # #########################################################################
-# Generated enums 0
+# Generated enums 2
 # #########################################################################
 
+class GenericStepOutControlAst:
+    def __init__(self, tb: type_builder.TypeBuilder):
+        _tb = tb._tb # type: ignore (we know how to use this private attribute)
+        self._bldr = _tb.enum("GenericStepOutControl")
+        self._values: typing.Set[str] = set([  "CONTINUE",  "PAUSE",  "STOP",  "DONE",  ])
+        self._vals = GenericStepOutControlValues(self._bldr, self._values)
+
+    def type(self) -> baml_py.FieldType:
+        return self._bldr.field()
+
+    @property
+    def values(self) -> "GenericStepOutControlValues":
+        return self._vals
+
+
+class GenericStepOutControlViewer(GenericStepOutControlAst):
+    def __init__(self, tb: type_builder.TypeBuilder):
+        super().__init__(tb)
+
+    
+    def list_values(self) -> typing.List[typing.Tuple[str, type_builder.EnumValueViewer]]:
+        return [(name, type_builder.EnumValueViewer(self._bldr.value(name))) for name in self._values]
+    
+
+class GenericStepOutControlValues:
+    def __init__(self, enum_bldr: baml_py.EnumBuilder, values: typing.Set[str]):
+        self.__bldr = enum_bldr
+        self.__values = values # type: ignore (we know how to use this private attribute) # noqa: F821
+
+    
+    
+    @property
+    def CONTINUE(self) -> type_builder.EnumValueViewer:
+        return type_builder.EnumValueViewer(self.__bldr.value("CONTINUE"))
+    
+    @property
+    def PAUSE(self) -> type_builder.EnumValueViewer:
+        return type_builder.EnumValueViewer(self.__bldr.value("PAUSE"))
+    
+    @property
+    def STOP(self) -> type_builder.EnumValueViewer:
+        return type_builder.EnumValueViewer(self.__bldr.value("STOP"))
+    
+    @property
+    def DONE(self) -> type_builder.EnumValueViewer:
+        return type_builder.EnumValueViewer(self.__bldr.value("DONE"))
+    
+    
+
+
+class GenericStepOutStatusAst:
+    def __init__(self, tb: type_builder.TypeBuilder):
+        _tb = tb._tb # type: ignore (we know how to use this private attribute)
+        self._bldr = _tb.enum("GenericStepOutStatus")
+        self._values: typing.Set[str] = set([  "OK",  "ERR",  ])
+        self._vals = GenericStepOutStatusValues(self._bldr, self._values)
+
+    def type(self) -> baml_py.FieldType:
+        return self._bldr.field()
+
+    @property
+    def values(self) -> "GenericStepOutStatusValues":
+        return self._vals
+
+
+class GenericStepOutStatusViewer(GenericStepOutStatusAst):
+    def __init__(self, tb: type_builder.TypeBuilder):
+        super().__init__(tb)
+
+    
+    def list_values(self) -> typing.List[typing.Tuple[str, type_builder.EnumValueViewer]]:
+        return [(name, type_builder.EnumValueViewer(self._bldr.value(name))) for name in self._values]
+    
+
+class GenericStepOutStatusValues:
+    def __init__(self, enum_bldr: baml_py.EnumBuilder, values: typing.Set[str]):
+        self.__bldr = enum_bldr
+        self.__values = values # type: ignore (we know how to use this private attribute) # noqa: F821
+
+    
+    
+    @property
+    def OK(self) -> type_builder.EnumValueViewer:
+        return type_builder.EnumValueViewer(self.__bldr.value("OK"))
+    
+    @property
+    def ERR(self) -> type_builder.EnumValueViewer:
+        return type_builder.EnumValueViewer(self.__bldr.value("ERR"))
+    
+    
+
+
 
 # #########################################################################
-# Generated classes 5
+# Generated classes 7
 # #########################################################################
 
 class MonikerDataAst:
@@ -300,6 +408,112 @@ class MonikerStepFrameOutProperties:
     @property
     def notes(self) -> type_builder.ClassPropertyViewer:
         return type_builder.ClassPropertyViewer(self.__bldr.property("notes"))
+    
+    
+
+
+class StepFrameInAst:
+    def __init__(self, tb: type_builder.TypeBuilder):
+        _tb = tb._tb # type: ignore (we know how to use this private attribute)
+        self._bldr = _tb.class_("StepFrameIn")
+        self._properties: typing.Set[str] = set([  "context",  "guidance",  ])
+        self._props = StepFrameInProperties(self._bldr, self._properties)
+
+    def type(self) -> baml_py.FieldType:
+        return self._bldr.field()
+
+    @property
+    def props(self) -> "StepFrameInProperties":
+        return self._props
+
+
+class StepFrameInViewer(StepFrameInAst):
+    def __init__(self, tb: type_builder.TypeBuilder):
+        super().__init__(tb)
+
+    
+    def list_properties(self) -> typing.List[typing.Tuple[str, type_builder.ClassPropertyViewer]]:
+        return [(name, type_builder.ClassPropertyViewer(self._bldr.property(name))) for name in self._properties]
+    
+
+
+class StepFrameInProperties:
+    def __init__(self, bldr: baml_py.ClassBuilder, properties: typing.Set[str]):
+        self.__bldr = bldr
+        self.__properties = properties # type: ignore (we know how to use this private attribute) # noqa: F821
+
+    
+    
+    @property
+    def context(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("context"))
+    
+    @property
+    def guidance(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("guidance"))
+    
+    
+
+
+class StepFrameOutAst:
+    def __init__(self, tb: type_builder.TypeBuilder):
+        _tb = tb._tb # type: ignore (we know how to use this private attribute)
+        self._bldr = _tb.class_("StepFrameOut")
+        self._properties: typing.Set[str] = set([  "status",  "control",  "reason",  "hint",  "text",  "payload",  "context_delta",  ])
+        self._props = StepFrameOutProperties(self._bldr, self._properties)
+
+    def type(self) -> baml_py.FieldType:
+        return self._bldr.field()
+
+    @property
+    def props(self) -> "StepFrameOutProperties":
+        return self._props
+
+
+class StepFrameOutViewer(StepFrameOutAst):
+    def __init__(self, tb: type_builder.TypeBuilder):
+        super().__init__(tb)
+
+    
+    def list_properties(self) -> typing.List[typing.Tuple[str, type_builder.ClassPropertyViewer]]:
+        return [(name, type_builder.ClassPropertyViewer(self._bldr.property(name))) for name in self._properties]
+    
+
+
+class StepFrameOutProperties:
+    def __init__(self, bldr: baml_py.ClassBuilder, properties: typing.Set[str]):
+        self.__bldr = bldr
+        self.__properties = properties # type: ignore (we know how to use this private attribute) # noqa: F821
+
+    
+    
+    @property
+    def status(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("status"))
+    
+    @property
+    def control(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("control"))
+    
+    @property
+    def reason(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("reason"))
+    
+    @property
+    def hint(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("hint"))
+    
+    @property
+    def text(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("text"))
+    
+    @property
+    def payload(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("payload"))
+    
+    @property
+    def context_delta(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("context_delta"))
     
     
 

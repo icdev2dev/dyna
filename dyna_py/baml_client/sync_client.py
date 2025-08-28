@@ -92,6 +92,20 @@ class BamlSyncClient:
             "arg": arg,
         })
         return typing.cast(str, result.cast_to(types, types, stream_types, False, __runtime__))
+    def SampleInput(self, text: str,
+        baml_options: BamlCallOptions = {},
+    ) -> types.StepFrameIn:
+        result = self.__options.merge_options(baml_options).call_function_sync(function_name="SampleInput", args={
+            "text": text,
+        })
+        return typing.cast(types.StepFrameIn, result.cast_to(types, types, stream_types, False, __runtime__))
+    def SampleOutput(self, inp_s: types.StepFrameIn,
+        baml_options: BamlCallOptions = {},
+    ) -> types.StepFrameOut:
+        result = self.__options.merge_options(baml_options).call_function_sync(function_name="SampleOutput", args={
+            "inp_s": inp_s,
+        })
+        return typing.cast(types.StepFrameOut, result.cast_to(types, types, stream_types, False, __runtime__))
     def TellAJoke(self, frame: types.MonikerStepFrameIn,task: str,
         baml_options: BamlCallOptions = {},
     ) -> types.MonikerStepFrameOut:
@@ -99,6 +113,13 @@ class BamlSyncClient:
             "frame": frame,"task": task,
         })
         return typing.cast(types.MonikerStepFrameOut, result.cast_to(types, types, stream_types, False, __runtime__))
+    def TellAJokeV2(self, in_arg: types.StepFrameIn,
+        baml_options: BamlCallOptions = {},
+    ) -> types.StepFrameOut:
+        result = self.__options.merge_options(baml_options).call_function_sync(function_name="TellAJokeV2", args={
+            "in_arg": in_arg,
+        })
+        return typing.cast(types.StepFrameOut, result.cast_to(types, types, stream_types, False, __runtime__))
     
 
 
@@ -120,6 +141,30 @@ class BamlStreamClient:
           lambda x: typing.cast(str, x.cast_to(types, types, stream_types, False, __runtime__)),
           ctx,
         )
+    def SampleInput(self, text: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.BamlSyncStream[stream_types.StepFrameIn, types.StepFrameIn]:
+        ctx, result = self.__options.merge_options(baml_options).create_sync_stream(function_name="SampleInput", args={
+            "text": text,
+        })
+        return baml_py.BamlSyncStream[stream_types.StepFrameIn, types.StepFrameIn](
+          result,
+          lambda x: typing.cast(stream_types.StepFrameIn, x.cast_to(types, types, stream_types, True, __runtime__)),
+          lambda x: typing.cast(types.StepFrameIn, x.cast_to(types, types, stream_types, False, __runtime__)),
+          ctx,
+        )
+    def SampleOutput(self, inp_s: types.StepFrameIn,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.BamlSyncStream[stream_types.StepFrameOut, types.StepFrameOut]:
+        ctx, result = self.__options.merge_options(baml_options).create_sync_stream(function_name="SampleOutput", args={
+            "inp_s": inp_s,
+        })
+        return baml_py.BamlSyncStream[stream_types.StepFrameOut, types.StepFrameOut](
+          result,
+          lambda x: typing.cast(stream_types.StepFrameOut, x.cast_to(types, types, stream_types, True, __runtime__)),
+          lambda x: typing.cast(types.StepFrameOut, x.cast_to(types, types, stream_types, False, __runtime__)),
+          ctx,
+        )
     def TellAJoke(self, frame: types.MonikerStepFrameIn,task: str,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.BamlSyncStream[stream_types.MonikerStepFrameOut, types.MonikerStepFrameOut]:
@@ -130,6 +175,18 @@ class BamlStreamClient:
           result,
           lambda x: typing.cast(stream_types.MonikerStepFrameOut, x.cast_to(types, types, stream_types, True, __runtime__)),
           lambda x: typing.cast(types.MonikerStepFrameOut, x.cast_to(types, types, stream_types, False, __runtime__)),
+          ctx,
+        )
+    def TellAJokeV2(self, in_arg: types.StepFrameIn,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.BamlSyncStream[stream_types.StepFrameOut, types.StepFrameOut]:
+        ctx, result = self.__options.merge_options(baml_options).create_sync_stream(function_name="TellAJokeV2", args={
+            "in_arg": in_arg,
+        })
+        return baml_py.BamlSyncStream[stream_types.StepFrameOut, types.StepFrameOut](
+          result,
+          lambda x: typing.cast(stream_types.StepFrameOut, x.cast_to(types, types, stream_types, True, __runtime__)),
+          lambda x: typing.cast(types.StepFrameOut, x.cast_to(types, types, stream_types, False, __runtime__)),
           ctx,
         )
     
@@ -147,11 +204,32 @@ class BamlHttpRequestClient:
             "arg": arg,
         }, mode="request")
         return result
+    def SampleInput(self, text: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        result = self.__options.merge_options(baml_options).create_http_request_sync(function_name="SampleInput", args={
+            "text": text,
+        }, mode="request")
+        return result
+    def SampleOutput(self, inp_s: types.StepFrameIn,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        result = self.__options.merge_options(baml_options).create_http_request_sync(function_name="SampleOutput", args={
+            "inp_s": inp_s,
+        }, mode="request")
+        return result
     def TellAJoke(self, frame: types.MonikerStepFrameIn,task: str,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.baml_py.HTTPRequest:
         result = self.__options.merge_options(baml_options).create_http_request_sync(function_name="TellAJoke", args={
             "frame": frame,"task": task,
+        }, mode="request")
+        return result
+    def TellAJokeV2(self, in_arg: types.StepFrameIn,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        result = self.__options.merge_options(baml_options).create_http_request_sync(function_name="TellAJokeV2", args={
+            "in_arg": in_arg,
         }, mode="request")
         return result
     
@@ -169,11 +247,32 @@ class BamlHttpStreamRequestClient:
             "arg": arg,
         }, mode="stream")
         return result
+    def SampleInput(self, text: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        result = self.__options.merge_options(baml_options).create_http_request_sync(function_name="SampleInput", args={
+            "text": text,
+        }, mode="stream")
+        return result
+    def SampleOutput(self, inp_s: types.StepFrameIn,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        result = self.__options.merge_options(baml_options).create_http_request_sync(function_name="SampleOutput", args={
+            "inp_s": inp_s,
+        }, mode="stream")
+        return result
     def TellAJoke(self, frame: types.MonikerStepFrameIn,task: str,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.baml_py.HTTPRequest:
         result = self.__options.merge_options(baml_options).create_http_request_sync(function_name="TellAJoke", args={
             "frame": frame,"task": task,
+        }, mode="stream")
+        return result
+    def TellAJokeV2(self, in_arg: types.StepFrameIn,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        result = self.__options.merge_options(baml_options).create_http_request_sync(function_name="TellAJokeV2", args={
+            "in_arg": in_arg,
         }, mode="stream")
         return result
     

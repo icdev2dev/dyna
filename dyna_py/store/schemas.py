@@ -78,10 +78,6 @@ AGENT_STATE_SCHEMA = pa.schema([
 
 
 
-
-
-
-
 # --------------------
 # Schema management
 # --------------------
@@ -113,12 +109,19 @@ def delete_queue_schema():
     print("deleting_queue_schema")
     AGENTS_DB.drop_table(QUEUE_NAME)
 
-if __name__ == '__main__':
-    print(AGENTS_DB.table_names())
 
+
+def create_all_schemas():
+    create_agent_state_schema()
     create_agent_steps_schema()
-    print(AGENTS_DB.table_names())
-    
-#    create_agents_config_schema()
+    create_queue_schema()
+    create_agents_config_schema()
 
+def delete_all_schemas():
+    delete_agent_state_schema()
+    delete_agent_steps_schema()
+    delete_queue_schema()
+
+if __name__ == "__main__":
+    create_all_schemas()
 

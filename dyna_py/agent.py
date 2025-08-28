@@ -80,6 +80,10 @@ async def agent_create(db, async_tbl, action):
         payload = json.loads(action.get("payload") or "{}")
         agent_id = payload.get("agent_id")
         initial_subject = payload.get("initial_subject", "foot")
+        print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
+        print(initial_subject)
+        print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
+        
         session_id = payload.get("session_id") or action.get("session_id") or str(uuid.uuid4())
 
         if not agent_id:
@@ -268,11 +272,6 @@ async def handle_actions(db, async_tbl, actions):
             finally:
                 IN_FLIGHT_ACTION_IDS.discard(aid)
         asyncio.create_task(run_one())
-
-
-
-
-
 
 
 

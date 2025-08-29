@@ -5,7 +5,9 @@ from flask import request
 
 
 from .static_endpoints import serve_plugin_file
-from .agents_endpoints import list_agents_endpoint, list_sessions_for_agent
+from .agents_endpoints import list_agents_endpoint, list_sessions_for_agent,create_agent, stop_agent, get_last_step_for_session_id
+
+
 
 from .chat_api import chat_endpoint
 from .form_api import prompt_to_schema_endpoint
@@ -43,7 +45,9 @@ MAP_HTTP_FUNCS = [
     ["/api/prompt-to-schema", prompt_to_schema_endpoint, ['POST']],
     ["/api/chat", chat_endpoint, ['POST']],
     ["/api/list-sessions-for-agent",list_sessions_for_agent , ['GET']],
-    
+    ["/api/create-agent", create_agent, ['POST']],
+    ["/api/stop-agent",stop_agent , ['POST']],
+    ["/api/get-last-step-for-session_id", get_last_step_for_session_id, ['GET']]
 
     # ...add more
 ]

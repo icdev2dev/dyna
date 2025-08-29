@@ -114,3 +114,34 @@ def list_sessions_for_agent(
             "last_updated": r.get("last_updated").isoformat() if pd.notna(r.get("last_updated")) else None,
         })
     return rows
+
+def get_agent_id_for_session_id(session_id:str) -> str|None:
+
+    try:
+        #print(agent_id)
+        state_tbl = AGENTS_DB.open_table(AGENT_STATE_NAME)
+        df = state_tbl.search().where(f"session_id == '{session_id}'").to_pandas()
+        if len(df) > 0:
+            return df.iloc[0].agent_id
+        else: 
+            return None        
+    except Exception as e:
+        return None        
+    
+
+def get_last_step_for_session_id(session_id): 
+    AGENTS_DB = lancedb.connect(AGENTS_URI)
+
+    agent_id = get_agent_id_for_session_id(session_id=session_id)
+
+    try:
+        steps_tbl = AGENTS_DB.open_table(AGENT_STEPS_NAME)
+        sdf = steps_tbl.search().where(f"agent_id == '{agent_id}' AND session_id == '{session_id}'").to_pandas()
+        
+    except Exception:
+        sdf = pd.DataFrame()
+
+    if len(sdf) > 0:
+        df_sorted = sdf.sort_values(by="iteration", ascending=False)
+        return df_sorted.iloc[0].text
+    return ""

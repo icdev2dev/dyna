@@ -42,7 +42,7 @@ def sanitize_config(cfg):
         return None
     kind = cfg.get("kind") or "form"
     # allow only kinds the Canvas knows
-    if kind not in {"form", "metadata", "chat"}:
+    if kind not in {"form", "metadata", "chat", "agentsList"}:
         kind = "form"
 
     out = {
@@ -81,6 +81,17 @@ def form_from_prompt(prompt: str):
     Very basic rules demo: you likely want to replace this with real LLM logic!
     """
     p = prompt.lower()
+    print(p)
+
+    if "agent" in p :
+        print("agent in p")
+        return {
+            "kind": "agentsList",
+            "title": "Available Agents",
+            "persist": "keep",
+            "value": {"entities": []}
+        }
+    
     if "product" in p:
         return {
             "kind": "form",
@@ -93,6 +104,14 @@ def form_from_prompt(prompt: str):
                 {"type": "checkbox", "name": "active", "label": "Active"},
             ],
             "value": {"active": True}
+        }
+    elif "agent" in p :
+        print("agent in p")
+        return {
+            "kind": "agentsList",
+            "title": "Available Agents",
+            "persist": "keep",
+            "value": {"entities": []}
         }
     elif "metadata" in p:
         return {

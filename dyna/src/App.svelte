@@ -27,7 +27,7 @@
 
     function sanitizeSpawnConfig(cfg) {
         if (!cfg || typeof cfg !== 'object') return null
-        let kind = ['form', 'metadata', 'chat'].includes(cfg.kind) ? cfg.kind : 'form'
+        let kind = ['form', 'metadata', 'chat', 'agentsList'].includes(cfg.kind) ? cfg.kind : 'form'
         const out = {
         kind,
         title: String(cfg.title || (kind === 'metadata' ? 'Metadata Editor' : kind === 'chat' ? 'Chat' : 'Form')),

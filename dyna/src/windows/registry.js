@@ -5,7 +5,7 @@ import RenderPlugin from '../RenderPlugin.svelte';
 import RenderAgentsList from './RenderAgentsList.svelte';
 import RenderOrderEditor from './RenderOrderEditor.svelte';
 import RenderAgentRuns from './RenderAgentRuns.svelte';
-
+import RenderRunDetail from './RenderRunDetail.svelte';
 
 export const WINDOW_RENDERERS = {
     form: RenderForm,
@@ -14,5 +14,6 @@ export const WINDOW_RENDERERS = {
     plugin: RenderPlugin,
     agentsList: RenderAgentsList,
     orderEditor: RenderOrderEditor,
-    agentRuns: RenderAgentRuns  
+    agentRuns: RenderAgentRuns,
+    runDetail: RenderRunDetail 
 };

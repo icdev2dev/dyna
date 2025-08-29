@@ -142,6 +142,15 @@ def agent_destroy_action(agent_id, actor, reason=None,  session_id: str | None =
     payload = json.dumps({"agent_id": agent_id, "reason": reason, "session_id": session_id})
     create_action(action_type="agent_destroy", actor=actor, payload=payload, session_id=session_id)
 
+from store.sessions import get_agent_id_for_session_id
+
+def stop_agent(session_id, reason=None):
+    agent_id = get_agent_id_for_session_id(session_id=session_id)
+    if agent_id:
+        agent_destroy_action(agent_id=agent_id, actor="user", reason=reason, session_id=session_id)
+
+
+
 def agent_pause_action(agent_id, actor, reason=None, session_id: str | None = None):
     payload = json.dumps({"agent_id": agent_id, "reason": reason, "session_id": session_id})
     create_action(action_type="agent_pause", actor=actor, payload=payload, session_id=session_id)

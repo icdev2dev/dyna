@@ -2,6 +2,7 @@ import lancedb, uuid, json
 from datetime import datetime
 from .schemas import AGENTS_URI, AGENT_STEPS_NAME
 import json as _json
+from ws_bus import emit_run_update
 
 
 AGENTS_DB = lancedb.connect(AGENTS_URI)
@@ -29,46 +30,6 @@ def _to_json_str(obj):
         return _json.dumps(obj)
     return str(obj)
 
-def append_agent_step(
-    agent_id: str,
-    iteration: int,
-    *,
-    session_id: str | None = None,
-    step_token: str | None = None,
-    next_step_token: str | None = None,
-    status: str = "ok",
-    text: str | None = None,
-    data: dict | list | None = None,
-    state: dict | list | None = None,
-    guidance: dict | list | None = None,
-    notes: str | None = None,
-    latency_ms: int | None = None,
-    error: str | None = None,
-    ):
-        
-        print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
-        print(AGENTS_DB.table_names())
-        print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
-        
-        tbl = AGENTS_DB.open_table(AGENT_STEPS_NAME)
-        rec = {
-            "id": str(uuid.uuid4()),
-            "created_at": datetime.now().isoformat(),
-            "agent_id": agent_id,
-            "session_id": session_id,
-            "iteration": iteration,
-            "step_token": step_token,
-            "next_step_token": next_step_token,
-            "status": status,
-            "text": text,
-            "data": _to_json_str(data),
-            "state": _to_json_str(state),
-            "guidance": _to_json_str(guidance),
-            "notes": notes,
-            "latency_ms": latency_ms,
-            "error": error,
-        }
-        tbl.add([rec], mode="append")
 
 
 
@@ -193,3 +154,52 @@ def list_agent_steps_latest(
     order="desc",
     )
 
+
+
+
+
+def append_agent_step(
+    agent_id: str,
+    iteration: int,
+    *,
+    session_id: str | None = None,
+    step_token: str | None = None,
+    next_step_token: str | None = None,
+    status: str = "ok",
+    text: str | None = None,
+    data: dict | list | None = None,
+    state: dict | list | None = None,
+    guidance: dict | list | None = None,
+    notes: str | None = None,
+    latency_ms: int | None = None,
+    error: str | None = None,
+):
+    tbl = AGENTS_DB.open_table(AGENT_STEPS_NAME)
+    rec = {
+    "id": str(uuid.uuid4()),
+    "created_at": datetime.now().isoformat(),
+    "agent_id": agent_id,
+    "session_id": session_id,
+    "iteration": iteration,
+    "step_token": step_token,
+    "next_step_token": next_step_token,
+    "status": status,
+    "text": text,
+    "data": _to_json_str(data),
+    "state": _to_json_str(state),
+    "guidance": _to_json_str(guidance),
+    "notes": notes,
+    "latency_ms": latency_ms,
+    "error": error,
+    }
+    tbl.add([rec], mode="append")
+
+    # Notify subscribed UI clients
+    run_id = f"{agent_id}::{session_id or ''}"
+    payload = {
+        "run_id": run_id,
+        "last_text": text,
+        "timestamp": rec["created_at"],
+    }
+    print(f"now emitting: {payload}")
+    emit_run_update(run_id, payload)

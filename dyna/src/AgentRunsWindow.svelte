@@ -1,5 +1,27 @@
 <script> 
   import WindowFrame from './WindowFrame.svelte'; 
+
+
+
+  import LiveRunWindow from './LiveRunWindow.svelte'; 
+  // ...your existing code... 
+ // Track opened live windows (each one is a LiveRunWindow) 
+  let liveWindows = $state([]); 
+  // [{ id, agent_id, session_id }] 
+  
+  function openLiveRun(run) { 
+    closeMenu(); 
+    console.log(run)
+    if (!run?.agent_id || !run?.session_id) return; 
+    const id = crypto.randomUUID(); 
+    liveWindows = [ ...liveWindows, { id, agent_id: run.agent_id, session_id: run.session_id } ]; 
+  } 
+  function closeLiveRun(id) { 
+    liveWindows = liveWindows.filter(w => w.id !== id); 
+  } 
+  // Replace the old "viewLastUpdated" to open live window instead function viewLastUpdated(run) { openLiveRun(run); }
+
+
   let { 
     id, 
     title = 'Agent Runs', 
@@ -105,13 +127,82 @@
     function openMenu(evt, run) { menuRun = run; menuX = evt.clientX; menuY = evt.clientY; menuOpen = true; } 
     function closeMenu() { menuOpen = false; menuRun = null; } 
     function viewDetails(run) { alert('Run details:\n' + JSON.stringify(run, null, 2)); closeMenu(); } 
-    function viewLastUpdated(run) { const text = run.last_text ? String(run.last_text) : '(no last text available)'; alert(`Last updated text:\n\n${text}`); closeMenu(); } 
+
+
+
+
+
+
+
+    
+
+//    function viewLastUpdated(run) { 
+//      const text = run.last_text ? String(run.last_text) : '(no last text available)'; 
+//      alert(`Last updated text:\n\n${text}`); 
+//      closeMenu(); 
+//    }
+    
+    
+
+async function viewLastUpdated(run) {
+const sid = run?.session_id;
+try {
+
+  const url = 'http://127.0.0.1:5000/api/get-last-step-for-session_id?session_id=' + `${encodeURIComponent(sid)}` 
+
+//  const url = sid ? /api/get-last-step-for-session_id?session_id=${encodeURIComponent(sid)}:
+  const res = await fetch(url, { method: 'GET' });
+  if (!res.ok) throw new Error(`Server error: ${res.status}`);
+  
+  const data = await res.json();
+  const text = typeof data === 'string' ? data
+  : data?.last_step ?? data?.text ?? String(data);
+  alert('Last updated text:\n\n' + (text ?? ''));
+} catch (e) {
+alert('Error: ' + (e?.message ?? String(e)));
+} finally {
+closeMenu();
+}
+}
+
+
+
+
+
+
+
+
+
+
+
     function openInterrupt(run) { guidanceText = ''; interruptError = null; interruptOpen = true; menuRun = run; 
     menuOpen = false; 
   } 
   function cancelInterrupt() { if (interruptBusy) return; interruptOpen = false; interruptError = null; guidanceText = ''; menuRun = null; } 
   
   
+  async function confirmStop(session_id) {
+    interruptBusy = true; 
+    interruptError = null; 
+
+    console.log(session_id)
+    try { // Example payload (adjust to your API): // 
+      await fetch('http://127.0.0.1:5000/api/stop-agent', 
+      {  
+        method: 'POST',  
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(session_id) 
+      });
+
+      alert(`Would interrupt run (session_id=${menuRun?.session_id}) (session_id=${session_id}) with guidance:\n\n${guidanceText}`); 
+      interruptOpen = false; 
+      menuRun = null; 
+      guidanceText = ''; 
+    } catch (e) { interruptError = e.message || String(e); } finally { interruptBusy = false; } 
+  
+  }
+
+
   async function confirmInterrupt() { 
     // High-level stub only; wire to your API later 
     interruptBusy = true; 
@@ -122,7 +213,8 @@
       interruptOpen = false; 
       menuRun = null; 
       guidanceText = ''; 
-    } catch (e) { interruptError = e.message || String(e); } finally { interruptBusy = false; } } 
+    } catch (e) { interruptError = e.message || String(e); } finally { interruptBusy = false; } 
+  } 
     
     async function deleteRun(run) { // High-level stub only; wire to your API later 
       if (!window.confirm('Delete this run?')) return; 
@@ -198,14 +290,19 @@
   <div class="popover-menu" style={`left: ${menuX}px; top: ${menuY}px;`} onclick={e => e.stopPropagation()} > 
     <div class="pmenu-label"> Last updated: {fmtDate(menuRun?.created_at)} </div> 
     <button class="pmenu-btn" onclick={() => viewDetails(menuRun)}>📄 View details</button> 
-    <button class="pmenu-btn" onclick={() => viewLastUpdated(menuRun)}>🕒 View last updated text</button> 
+    <button class="pmenu-btn" onclick={() => openLiveRun(menuRun)}>🕒 View last updated text</button> 
     {#if (menuRun?.status || '').toLowerCase() === 'running'} 
-      <button class="pmenu-btn" onclick={() => openInterrupt(menuRun)}>⏸️ Interrupt with guidance…</button> 
+      <button class="pmenu-btn" onclick={() => openInterrupt(menuRun)}>⏸️ Pause</button>
+      <button class="pmenu-btn" onclick={() => confirmStop(menuRun.session_id)}>⏹️ Stop</button>
+      <button class="pmenu-btn" onclick={() => openInterrupt(menuRun)}>🛑 Interrupt with guidance…</button>
     {/if} 
+    {#if (menuRun?.status || '').toLowerCase() === 'paused'} 
+      
+      <button class="pmenu-btn" onclick={() => openInterrupt(menuRun)}>▶️ Resume</button>
+    {/if}
     {#if (menuRun?.status || '').toLowerCase() === 'stopped'} 
       <button class="pmenu-btn danger" onclick={() => deleteRun(menuRun)}>🗑️ Delete run</button> 
     {/if} 
-    <button class="pmenu-btn" onclick={() => closeMenu()}>Cancel</button> 
   </div> 
   <div class="backdrop" onclick={closeMenu}></div> 
 
@@ -233,7 +330,18 @@
       </div> 
     </div> 
 {/if} 
-  
+
+{#each liveWindows as w (w.id)}
+<LiveRunWindow
+id={w.id}
+title={`Live Run: ${w.agent_id} / ${w.session_id}`}
+run={{ agent_id: w.agent_id, session_id: w.session_id }}
+z={z + 1}
+onFocus={() => {}}
+onRequestClose={() => closeLiveRun(w.id)}
+/>
+{/each}
+
 <style> 
   .runs-root { display: grid; grid-template-rows: auto 1fr; gap: 10px; height: 100%; } 
   .toolbar { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; } 

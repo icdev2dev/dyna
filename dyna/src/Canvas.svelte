@@ -135,7 +135,37 @@
                 persist 
             }; 
             windows = [...windows, win]; 
-            return id; } 
+            return id; 
+        } 
+
+
+
+        if (config.kind === 'runDetail') {
+            const win = {
+                id,
+                kind: 'runDetail',
+                title: config.title ?? 'Last Updated',
+                run: {
+                    agent_id: String(config.run?.agent_id || ''),
+                    session_id: String(config.run?.session_id || '')
+                },
+                position: pos,
+                size,
+                z: ++zCounter,
+                persist
+            };
+            windows = [...windows, win];
+            return id;
+        }
+
+
+
+
+
+
+
+
+
 
         // NEW: plugin branch
         if (config.kind === 'plugin') {
@@ -292,12 +322,37 @@ function handleShowAgentRuns(e) {
         size: { w: 900, h: 520 }, 
         filters: { agent_id, status: '', q: '' } 
     }); 
-} 
-$effect(() => { 
-    if (!windowsLayerEl) return; 
-    const h = (ev) => handleShowAgentRuns(ev); 
-    windowsLayerEl.addEventListener('showAgentRuns', h); 
-    return () => windowsLayerEl.removeEventListener('showAgentRuns', h); 
+}
+
+
+
+function handleShowRunDetail(e) {
+const aid = e?.detail?.agent_id;
+const sid = e?.detail?.session_id;
+if (!aid || !sid) return;
+spawn({
+kind: 'runDetail',
+title: `Last Updated — ${sid}`,
+persist: 'keep',
+size: { w: 700, h: 480 },
+run: { agent_id:aid, session_id:sid }
+});
+}
+
+
+
+
+
+$effect(() => {
+if (!windowsLayerEl) return;
+const hRuns = (ev) => handleShowAgentRuns(ev);
+const hDetail = (ev) => handleShowRunDetail(ev);
+windowsLayerEl.addEventListener('showAgentRuns', hRuns);
+windowsLayerEl.addEventListener('showRunDetail', hDetail);
+return () => {
+windowsLayerEl.removeEventListener('showAgentRuns', hRuns);
+windowsLayerEl.removeEventListener('showRunDetail', hDetail);
+};
 });
 
 

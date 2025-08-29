@@ -8,6 +8,8 @@ def prompt_to_schema_endpoint():
         return jsonify({"error": "prompt is required"}), 400
 
     result = prompt_to_schema(prompt)
+
+    print(result)
     if not result:
         return jsonify({"error": "invalid response"}), 500
     return jsonify(result), 200

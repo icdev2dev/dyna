@@ -115,7 +115,7 @@ def create_all_schemas():
     create_agent_state_schema()
     create_agent_steps_schema()
     create_queue_schema()
-    create_agents_config_schema()
+#    create_agents_config_schema()
 
 def delete_all_schemas():
     delete_agent_state_schema()

@@ -14,5 +14,8 @@
     "esbuild": "^0.25.9",
     "svelte": "^5.38.2",
     "vite": "^7.1.2"
+  },
+  "dependencies": {
+    "socket.io-client": "^4.8.1"
   }
 }

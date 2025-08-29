@@ -85,7 +85,12 @@
     launchBusy = true; 
     launchErr = null; 
     try { 
-      const res = await fetch('http://127.0.0.1:5000/api/launch-agent', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agent_id, session_id, input: prompt, config }) }); 
+      const res = await fetch('http://127.0.0.1:5000/api/create-agent', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ agent_id, session_id, input: prompt, config }) 
+      });
+
       if (!res.ok) throw new Error(`HTTP ${res.status}`); 
       launchOpen = false; 
       // Trigger runs window for this agent via a bubbling DOM CustomEvent 
@@ -168,7 +173,7 @@ onRequestClose={requestClose} >
       <button 
         class="pmenu-btn" 
         onclick={() => { openLaunch(menuAgent); closeMenu(); }}>🚀 
-        Launch Agent
+        Launch Agent Run
       </button> 
       <button 
         class="pmenu-btn" 
@@ -178,7 +183,6 @@ onRequestClose={requestClose} >
       <button class="pmenu-btn" onclick={() => { showProps(menuAgent); closeMenu(); }}>ℹ️ 
         More Properties
       </button> 
-      <button class="pmenu-btn" onclick={closeMenu}>Cancel</button> 
     </div> 
   <div class="backdrop" onclick={closeMenu}></div> 
 {/if}

@@ -6,6 +6,8 @@ import RenderAgentsList from './RenderAgentsList.svelte';
 import RenderOrderEditor from './RenderOrderEditor.svelte';
 import RenderAgentRuns from './RenderAgentRuns.svelte';
 import RenderRunDetail from './RenderRunDetail.svelte';
+import LiveRunRenderer from './RenderLiveRun.svelte';
+
 
 export const WINDOW_RENDERERS = {
     form: RenderForm,
@@ -15,5 +17,6 @@ export const WINDOW_RENDERERS = {
     agentsList: RenderAgentsList,
     orderEditor: RenderOrderEditor,
     agentRuns: RenderAgentRuns,
-    runDetail: RenderRunDetail 
+    runDetail: RenderRunDetail,
+    liveRun: LiveRunRenderer
 };

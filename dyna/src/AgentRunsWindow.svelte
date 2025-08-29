@@ -166,26 +166,87 @@ closeMenu();
 }
 
 
-
-
-
-
-
-
-
-
-
-    function openInterrupt(run) { guidanceText = ''; interruptError = null; interruptOpen = true; menuRun = run; 
+  function openInterrupt(run) { 
+    guidanceText = ''; 
+    interruptError = null; 
+    interruptOpen = true; 
+    menuRun = run; 
     menuOpen = false; 
   } 
-  function cancelInterrupt() { if (interruptBusy) return; interruptOpen = false; interruptError = null; guidanceText = ''; menuRun = null; } 
+  function cancelInterrupt() { 
+    if (interruptBusy) return; 
+    interruptOpen = false; 
+    interruptError = null; 
+    guidanceText = ''; 
+    menuRun = null; 
+  } 
   
+
+
+async function confirmInterrupt() {
+  interruptBusy = true;
+  interruptError = null;
+  const session_id = menuRun?.session_id;
+  if (!session_id) {
+    interruptError = 'No session_id';
+    interruptBusy = false;
+    return;
+  }
+  try {
+    const res = await fetch('http://127.0.0.1:5000/api/interrupt-agent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id, guidance: guidanceText })
+    });
+    if (!res.ok) throw new Error(`Server error: ${res.status}`);
+    interruptOpen = false;
+    menuRun = null;
+    guidanceText = '';
+  } catch (e) {
+    interruptError = e.message || String(e);
+  } finally {
+    interruptBusy = false;
+  }
+}    
+
+
+  async function confirmResume(session_id) {
+
+    try { // Example payload (adjust to your API): // 
+      await fetch('http://127.0.0.1:5000/api/resume-agent', 
+      {  
+        method: 'POST',  
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(session_id) 
+      });
+
+      alert(`Resumed run (session_id=${menuRun?.session_id})`); 
+      menuRun = null; 
+    } catch (e) { interruptError = e.message || String(e); } finally { interruptBusy = false; } 
+  
+    
+  }
+
+
+  async function confirmPause(session_id) {
+
+    try { // Example payload (adjust to your API): // 
+      await fetch('http://127.0.0.1:5000/api/pause-agent', 
+      {  
+        method: 'POST',  
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(session_id) 
+      });
+
+      alert(`Paused run (session_id=${menuRun?.session_id})`); 
+      menuRun = null; 
+    } catch (e) { interruptError = e.message || String(e); } finally { interruptBusy = false; } 
+  
+    
+  }
   
   async function confirmStop(session_id) {
-    interruptBusy = true; 
-    interruptError = null; 
-
-    console.log(session_id)
+  
     try { // Example payload (adjust to your API): // 
       await fetch('http://127.0.0.1:5000/api/stop-agent', 
       {  
@@ -194,8 +255,7 @@ closeMenu();
         body: JSON.stringify(session_id) 
       });
 
-      alert(`Would interrupt run (session_id=${menuRun?.session_id}) (session_id=${session_id}) with guidance:\n\n${guidanceText}`); 
-      interruptOpen = false; 
+      alert(`Stopped run (session_id=${menuRun?.session_id})`); 
       menuRun = null; 
       guidanceText = ''; 
     } catch (e) { interruptError = e.message || String(e); } finally { interruptBusy = false; } 
@@ -203,22 +263,13 @@ closeMenu();
   }
 
 
-  async function confirmInterrupt() { 
-    // High-level stub only; wire to your API later 
-    interruptBusy = true; 
-    interruptError = null; 
-    try { // Example payload (adjust to your API): // 
-      await fetch('http://127.0.0.1:5000/api/interrupt-run', {  method: 'POST',  headers: { 'Content-Type': 'application/json' } }); 
-      alert(`Would interrupt run (session_id=${menuRun?.session_id}) with guidance:\n\n${guidanceText}`); 
-      interruptOpen = false; 
-      menuRun = null; 
-      guidanceText = ''; 
-    } catch (e) { interruptError = e.message || String(e); } finally { interruptBusy = false; } 
-  } 
-    
     async function deleteRun(run) { // High-level stub only; wire to your API later 
       if (!window.confirm('Delete this run?')) return; 
-      try { await fetch(`http://127.0.0.1:5000/api/delete-run?session_id=${encodeURIComponent(run.session_id)}`, { method: 'DELETE' }); 
+      try { 
+        await fetch(`http://127.0.0.1:5000/api/delete-run?session_id=${encodeURIComponent(run.session_id)}`, 
+          { method: 'DELETE' 
+
+          }); 
       alert(`Would delete run (session_id=${run.session_id})`); 
       // Reflect locally for now 
       runs = runs.filter(r => r.session_id !== run.session_id); 
@@ -292,13 +343,13 @@ closeMenu();
     <button class="pmenu-btn" onclick={() => viewDetails(menuRun)}>📄 View details</button> 
     <button class="pmenu-btn" onclick={() => openLiveRun(menuRun)}>🕒 View last updated text</button> 
     {#if (menuRun?.status || '').toLowerCase() === 'running'} 
-      <button class="pmenu-btn" onclick={() => openInterrupt(menuRun)}>⏸️ Pause</button>
+      <button class="pmenu-btn" onclick={() => confirmPause(menuRun.session_id)}>⏸️ Pause</button>
       <button class="pmenu-btn" onclick={() => confirmStop(menuRun.session_id)}>⏹️ Stop</button>
       <button class="pmenu-btn" onclick={() => openInterrupt(menuRun)}>🛑 Interrupt with guidance…</button>
     {/if} 
     {#if (menuRun?.status || '').toLowerCase() === 'paused'} 
       
-      <button class="pmenu-btn" onclick={() => openInterrupt(menuRun)}>▶️ Resume</button>
+      <button class="pmenu-btn" onclick={() => confirmResume(menuRun.session_id)}>▶️ Resume</button>
     {/if}
     {#if (menuRun?.status || '').toLowerCase() === 'stopped'} 
       <button class="pmenu-btn danger" onclick={() => deleteRun(menuRun)}>🗑️ Delete run</button> 
@@ -307,6 +358,7 @@ closeMenu();
   <div class="backdrop" onclick={closeMenu}></div> 
 
 {/if}
+
 {#if interruptOpen}
 
     <div class="modal-backdrop" onclick={(e) => { if (e.target === e.currentTarget) cancelInterrupt(); }}> 
@@ -323,9 +375,22 @@ closeMenu();
             <textarea rows="4" class="input" placeholder="Provide additional guidance…" bind:value={guidanceText}></textarea> 
           </div> 
           {#if interruptError}<div class="alert err">{interruptError}</div>{/if} 
-        </section> <footer class="modal-actions"> 
-          <button class="btn secondary" type="button" onclick={cancelInterrupt} disabled={interruptBusy}>Cancel</button> 
-          <button class="btn primary" type="button" onclick={confirmInterrupt} disabled={interruptBusy || !guidanceText.trim()}> {interruptBusy ? 'Sending…' : 'OK'} </button> 
+        </section> 
+        <footer class="modal-actions"> 
+          <button 
+            class="btn secondary" 
+            type="button" 
+            onclick={cancelInterrupt} 
+            disabled={interruptBusy}>Cancel
+          </button> 
+          <button 
+            class="btn primary" 
+            type="button" 
+            onclick={confirmInterrupt} 
+            disabled={interruptBusy || !guidanceText.trim()}
+            > 
+            {interruptBusy ? 'Sending…' : 'OK'} 
+          </button> 
         </footer> 
       </div> 
     </div> 
@@ -445,7 +510,8 @@ onRequestClose={() => closeLiveRun(w.id)}
   --text: #0f172a; --muted: #64748b; --border: #e5e7eb; --subtle: #f8fafc; --radius: 12px; } 
   .modal-backdrop { 
     position: fixed; 
-    inset: 0; background: rgba(15, 23, 42, 0.35); 
+    inset: 0; 
+    background: rgba(234, 227, 227, 0.35); 
     backdrop-filter: blur(4px); 
     display: grid; 
     place-items: center; 
@@ -457,7 +523,7 @@ onRequestClose={() => closeLiveRun(w.id)}
     max-height: calc(100vh - 32px); 
     display: grid; 
     grid-template-rows: auto 1fr auto; 
-    background: #fff; border: 1px solid var(--border); 
+    background: #1c1b1b; border: 1px solid var(--border); 
     border-radius: var(--radius); 
     box-shadow: 0 18px 48px rgba(0,0,0,0.22); 
     overflow: hidden; color: var(--text); 
@@ -469,20 +535,20 @@ onRequestClose={() => closeLiveRun(w.id)}
     border-bottom: 1px solid color-mix(in oklab, var(--accent) 20%, #000 0%); 
   } 
   .modal-header .title { font-weight: 800; letter-spacing: 0.2px; } 
-  .modal-body { padding: 14px 16px; display: grid; gap: 14px; overflow-y: auto; background: #fff; } 
+  .modal-body { padding: 14px 16px; display: grid; gap: 14px; overflow-y: auto; background: #ebe8e8; } 
   .lbl { font-size: 12px; font-weight: 700; color: #334155; letter-spacing: 0.02em; } 
   .input { 
     width: 100%; 
     padding: 10px 12px; border: 1px solid var(--border); 
     border-radius: 10px; 
-    background: #fff; 
+    background: #faf6f6; 
     color: var(--text); 
     outline: none; 
     transition: border-color 120ms, box-shadow 120ms, background-color 120ms; 
     box-shadow: inset 0 1px 0 rgba(0,0,0,0.03); 
   } 
   .input.readonly { 
-    background: #f9fafb; 
+    background: #f5f7f9; 
     color: #475569; 
   } 
   textarea.input { 

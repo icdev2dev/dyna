@@ -45,8 +45,9 @@ class StepFrameOut {
         this is the structured output.
     "#)
     context_delta string? @description(#"
-        you have been provided with some context and some guidance. This is your interpretation of the consolidated context. In the
-        next iteration, this will be the changed context with no additional guidance IF this is different than the original context.
+        You have been provided with some context and some guidance. 
+        This is your interpretation of the consolidated context. 
+        In the next iteration, this will be the changed context with no additional guidance IF this is different than the original context.
     "#)
 
 }

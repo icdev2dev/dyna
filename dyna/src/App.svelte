@@ -90,7 +90,7 @@
 </script> 
 
 
-
+<!--
 <div class="toolbar"> 
     <button type="button" 
         onclick={() => controller?.spawn({ 
@@ -132,12 +132,11 @@
                 })
             } 
         >
-
             List Agent Runs
         </button> 
-
-
 </div>
+-->
+
 <div class="app"> 
     <div class="toolbar"> 
     </div> 

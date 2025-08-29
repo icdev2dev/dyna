@@ -2,6 +2,8 @@ import asyncio
 from typing import Optional, Dict, Any
 
 from baml_test2 import  tell_a_joke_v2
+from baml_client.async_client import b
+from baml_client.types import StepFrameIn, StepFrameOut
 
 from agent_core import PauseMixin, InterruptMixin
 from agent_loop import LoopingAgentBase, StepOutcome
@@ -71,7 +73,18 @@ class JokeAgent(PauseMixin, InterruptMixin, LoopingAgentBase):
     async def do_tick(self, step: int) -> StepOutcome:
         # Call your BAML function; it returns an object with .text
         print("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++")
-        joke = await tell_a_joke_v2(self.current_subject)
+
+
+
+
+#        async def tell_a_joke_v2(subject="foot", guidance="") -> StepFrameOut:
+        in_arg = StepFrameIn(context=self.current_subject, guidance="")
+        joke =  await b.TellAJokeV2(in_arg=in_arg)
+
+
+
+
+#        joke = await tell_a_joke_v2(self.current_subject)
         text = getattr(joke, "text", None) or str(joke)
 
         print(f"[Agent {self.agent_id}] Joke: {text} ENTIRE THING : {joke}")

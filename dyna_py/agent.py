@@ -41,6 +41,8 @@ async def upsert_state_async(agent_id, status=None, iteration=None, result=None,
 
 def _resolve_agent(agent_id=None, session_id=None):
     # Prefer session_id if supplied
+
+    
     if session_id and session_id in SESSIONS:
         return session_id, SESSIONS.get(session_id)
     # Fallback: latest session for agent_id
@@ -209,6 +211,7 @@ async def agent_resume(db, async_tbl, action):
 
 
 async def agent_interrupt(db, async_tbl, action):
+    print("IN INITER")
     action_id = action.get("action_id")
     payload_raw = action.get("payload") or ""
     try:
@@ -216,6 +219,7 @@ async def agent_interrupt(db, async_tbl, action):
         agent_id = payload.get("agent_id") or action.get("agent_id")
         session_id = payload.get("session_id") or action.get("session_id")
         guidance = payload.get("guidance")
+        print(agent_id, session_id, guidance)
         sid, agent = _resolve_agent(agent_id=agent_id, session_id=session_id)
         if agent is not None:
             await agent.interrupt(guidance)
@@ -275,7 +279,16 @@ async def handle_actions(db, async_tbl, actions):
 
 
 
+async def poll_lancedb_for_actions(db, async_tbl):
+    await asyncio.sleep(15)
+    print("c")
+    async_tbl = await db.open_table(QUEUE_NAME)
 
+    result = await async_tbl.query().where("processed == False").to_pandas()
+    return result.to_dict(orient="records")
+    
+
+'''
 async def poll_lancedb_for_actions(db, async_tbl):
     
 
@@ -291,6 +304,7 @@ async def poll_lancedb_for_actions(db, async_tbl):
     return []
 
 poll_lancedb_for_actions.counter = 0
+'''
 
 
 

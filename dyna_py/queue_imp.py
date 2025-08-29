@@ -6,6 +6,8 @@ import uuid
 import json
 
 from store.schemas import AGENTS_URI, AGENTS_CONFIG_NAME, QUEUE_NAME
+from store.sessions import get_agent_id_for_session_id
+
 # --------------------
 # Database Setup
 # --------------------
@@ -108,41 +110,15 @@ def delete_all_actions():
 # --------------------
 def agent_create(agent_id, actor, initial_subject="foot", session_id: str | None = None):
     sid = session_id or str(uuid.uuid4())
-    payload = json.dumps({
-        "agent_id": agent_id,
-        "initial_subject": initial_subject,
-        "session_id": sid,
-    })
-    create_action(
-        action_type="create_agent",
-        actor=actor,
-        payload=payload,
-        session_id=sid,
-    )
-    print(f"CreateAgent action for {agent_id} queued with initial_subject: {initial_subject}, session_id: {sid}")
-
+    payload = json.dumps({ "agent_id": agent_id, "initial_subject": initial_subject, "session_id": sid})
+    create_action( action_type="create_agent", actor=actor, payload=payload, session_id=sid)
     return sid
-
-def agent_interrupt(agent_id, actor, guidance: dict, session_id: str | None = None):
-    payload = json.dumps({
-        "agent_id": agent_id,
-        "session_id": session_id,
-        "guidance": guidance
-    })
-    create_action(
-        action_type="agent_interrupt",
-        actor=actor,
-        payload=payload,
-        session_id=session_id,
-    )
-    print(f"Interrupt action for {agent_id}/{session_id} queued with guidance: {guidance}")
-    
 
 def agent_destroy_action(agent_id, actor, reason=None,  session_id: str | None = None):
     payload = json.dumps({"agent_id": agent_id, "reason": reason, "session_id": session_id})
     create_action(action_type="agent_destroy", actor=actor, payload=payload, session_id=session_id)
+    return("ok")
 
-from store.sessions import get_agent_id_for_session_id
 
 def stop_agent(session_id, reason=None):
     agent_id = get_agent_id_for_session_id(session_id=session_id)
@@ -151,13 +127,23 @@ def stop_agent(session_id, reason=None):
 
 
 
-def agent_pause_action(agent_id, actor, reason=None, session_id: str | None = None):
+def agent_interrupt_action(agent_id, session_id, actor="user", guidance: dict = {} ):
+    payload = json.dumps({ "agent_id": agent_id, "session_id": session_id, "guidance": guidance})
+    create_action( action_type="agent_interrupt", actor=actor, payload=payload,session_id=session_id)
+    
+    return("ok")
+
+
+def agent_pause_action(agent_id, session_id: str , reason="user initiated", actor="user"):
     payload = json.dumps({"agent_id": agent_id, "reason": reason, "session_id": session_id})
     create_action(action_type="agent_pause", actor=actor, payload=payload, session_id=session_id)
+    return("ok")
 
-def agent_resume_action(agent_id, actor, session_id: str | None = None):
+def agent_resume_action(agent_id, session_id: str , actor="user", ):
     payload = json.dumps({"agent_id": agent_id, "session_id": session_id})
     create_action(action_type="agent_resume", actor=actor, payload=payload, session_id=session_id)
+    return("ok")
+
 # --------------------
 # Async Helper
 # --------------------

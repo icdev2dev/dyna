@@ -2,8 +2,9 @@ from typing import Optional, Dict, Any, List
 
 from agent_core import PauseMixin, InterruptMixin
 from agent_loop import LoopingAgentBase, StepOutcome
-from store.messages import list_messages_since, append_message
+from store.messages import list_messages_since
 from datetime import datetime, timedelta
+
 
 class PersonaAgent(PauseMixin, InterruptMixin, LoopingAgentBase):
     def __init__(
@@ -32,24 +33,6 @@ class PersonaAgent(PauseMixin, InterruptMixin, LoopingAgentBase):
             "persona": self.persona_config.get("name") or self.agent_id,
         }
 
-    async def apply_guidance(self, g) -> Optional[dict]:
-        if not isinstance(g, dict):
-            return None
-        t = g.get("type")
-        if t == "set_tone":
-            tone = str(g.get("tone") or "").strip()
-            if tone:
-                self.persona_config["tone"] = tone
-                return {"tone": tone}
-        if t == "speak_now":
-            self._force_tick = True
-        if t == "set_cooldown":
-            try:
-                self.cooldown_seconds = float(g.get("seconds", self.cooldown_seconds))
-                return {"cooldown_seconds": self.cooldown_seconds}
-            except Exception:
-                pass
-        return None
 
     def _can_speak_now(self) -> bool:
         if self._last_spoke_at is None:
@@ -69,21 +52,77 @@ class PersonaAgent(PauseMixin, InterruptMixin, LoopingAgentBase):
             return StepOutcome(status="info", text=None, state={"idle": True, "conversation_id": self.conversation_id})
 
         self.last_seen_iso = msgs[-1]["created_at"]
+        last_msg_id = msgs[-1].get("message_id")
+
+
+        try:
+            # Merge into agent context so agent_state.context carries it
+            self._merge_context({"last_seen_iso": self.last_seen_iso, "last_msg_id": last_msg_id})
+        except Exception:
+            pass
+
+
         last = msgs[-1]
+
+
         if last.get("author_id") == self.agent_id:
-            return StepOutcome(status="info", text=None, state={"seen_self": True, "conversation_id": self.conversation_id})
+            return StepOutcome(status="info", data={"intent": {"type": "silent", "reason": "seen_self"}}, state={"conversation_id": self.conversation_id})
 
-        if not self._can_speak_now():
-            return StepOutcome(status="info", text=None, state={"cooldown": True, "conversation_id": self.conversation_id})
+        if not self._can_speak_now() and not self._force_tick:
+            return StepOutcome(status="info", data={"intent": {"type": "silent", "reason": "cooldown"}}, state={"conversation_id": self.conversation_id})
 
-        # Simple activation: reply if last message is user or another agent
-        window = msgs[-10:]  # small recent window
+        window = msgs[-10:]
         reply = await self._generate_reply(window)
-        append_message(self.conversation_id, self.agent_id, "agent", reply, meta={"session_id": self.session_id})
-        self._last_spoke_at = datetime.now()
 
         return StepOutcome(
             status="ok",
-            text=reply,
-            state={"conversation_id": self.conversation_id, "spoke": True, "tone": self.persona_config.get("tone")}
+            data={"intent": {"type": "speak", "mode": "answer", "text": reply}},
+            state={"conversation_id": self.conversation_id}
         )
+
+    
+    async def run(self):
+    # Explicitly call the LoopingAgentBase run to avoid AgentBase.run
+        return await LoopingAgentBase.run(self)
+    
+        # Optionally handle 'stop' guidance (kept optional)
+    async def apply_guidance(self, g) -> Optional[dict]:
+        if not isinstance(g, dict):
+            return None
+        t = (g.get("type") or "").strip()
+
+        if t in ("rehydrate", "set_last_seen"):
+            lsi = g.get("last_seen_iso") or g.get("last_seen")
+            if lsi:
+                self.last_seen_iso = str(lsi)
+                return {"last_seen_iso": self.last_seen_iso}
+
+        if t == "set_tone":
+            tone = str(g.get("tone") or "").strip()
+            if tone:
+                self.persona_config["tone"] = tone
+                return {"tone": tone}
+
+        if t == "speak_now":
+            self._force_tick = True
+            return {"force_tick": True}
+
+        if t == "set_cooldown":
+            try:
+                self.cooldown_seconds = float(g.get("seconds", self.cooldown_seconds))
+                return {"cooldown_seconds": self.cooldown_seconds}
+            except Exception:
+                pass
+
+        # NEW: When a new_message arrives, wake the agent and bypass cooldown for this tick
+        if t == "new_message":
+            self._force_tick = True
+            # optionally include a tiny breadcrumb for observability
+            return {"force_tick": True, "last_new_message_id": g.get("message_id")}
+
+        if t == "stop":
+            self.request_stop()
+            return {"stopping": True}
+
+        return None
+    

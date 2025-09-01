@@ -1,7 +1,7 @@
 
 import asyncio
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 from queue_imp import mark_action_processed_async, QUEUE_NAME
 
@@ -12,6 +12,7 @@ from store.agent_state import upsert_agent_state, get_agent_state
 from environment import environment_reload as _environment_reload
 from persona_agent import PersonaAgent
 from store.conversations import add_participant
+from store.conversations import add_participant_if_absent
 
 JOKE_AGENTS = {}  # agent_id -> JokeAgent
 SESSIONS = {}              # session_id -> instance
@@ -42,19 +43,21 @@ async def upsert_state_async(agent_id, status=None, iteration=None, result=None,
 
 
 def _resolve_agent(agent_id=None, session_id=None):
-    # Prefer session_id if supplied
-
-    
+# Prefer session_id if supplied
     if session_id and session_id in SESSIONS:
         return session_id, SESSIONS.get(session_id)
-    # Fallback: latest session for agent_id
+    # Fallback: latest session for agent_id (only if not stale)
     if agent_id and agent_id in AGENT_LATEST:
         sid = AGENT_LATEST[agent_id]
-        return sid, SESSIONS.get(sid)
+        agent = SESSIONS.get(sid)
+    if agent:
+        return sid, agent
+    # stale mapping; fall through to legacy
     # Legacy: single-agent map
     if agent_id and agent_id in JOKE_AGENTS:
         return None, JOKE_AGENTS.get(agent_id)
     return None, None
+
 
 
 
@@ -108,7 +111,7 @@ async def agent_create(db, async_tbl, action):
                 conversation_id=conversation_id,
                 persona_config=persona_config,
                 loop_interval=payload.get("loop_interval", 1.5),
-                state_updater=functools.partial(upsert_state_async, agent_id=agent_id, session_id=session_id),
+                state_updater=functools.partial(upsert_state_async, session_id=session_id),
                 steps_appender=functools.partial(
                     __import__("store.steps_async", fromlist=["append_step_async"]).append_step_async,
                     agent_id,
@@ -120,7 +123,7 @@ async def agent_create(db, async_tbl, action):
                 agent_id,
                 session_id,
                 initial_subject=initial_subject,
-                state_updater=functools.partial(upsert_state_async, agent_id=agent_id, session_id=session_id),
+                state_updater=functools.partial(upsert_state_async, session_id=session_id),
                 steps_appender=functools.partial(
                 # append_step_async signature (agent_id, iteration, **fields)
                 __import__("store.steps_async", fromlist=["append_step_async"]).append_step_async,
@@ -145,12 +148,29 @@ async def agent_create(db, async_tbl, action):
 
         try:
             if agent_type == "PersonaAgent" and conversation_id:
-                add_participant(conversation_id, agent_id, session_id, persona_config)
+                add_participant_if_absent(conversation_id, agent_id, session_id, persona_config)
+                
         except Exception as e:
             print(f"add_participant failed: {e}")
 
 
         task = asyncio.create_task(agent.run())
+
+
+
+
+        def _log_task_result(t):
+            import traceback, asyncio
+            try:
+                t.result()
+                print(f"Agent {agent.agent_id}/{session_id} task completed.")
+            except asyncio.CancelledError:
+                print(f"Agent {agent.agent_id}/{session_id} task cancelled.")
+            except Exception as e:
+                print(f"Agent {agent.agent_id}/{session_id} task failed: {e!r}")
+                traceback.print_exception(type(e), e, e.__traceback__)
+
+        task.add_done_callback(_log_task_result)
         agent._task = task
 
 
@@ -180,7 +200,7 @@ async def agent_destroy(db, async_tbl, action):
         sid, agent = _resolve_agent(agent_id=agent_id, session_id=session_id)
         if not agent:
             print(f"Agent not found for agent_id={agent_id}, session_id={session_id}")
-            await upsert_state_async(agent_id, status="stopped", context={"ended_at": datetime.now().isoformat()}, session_id=sid or session_id)
+            await upsert_state_async(agent_id, status="stopped", context={"ended_at": datetime.now(timezone.utc).isoformat()}, session_id=sid or session_id)
             return
 
         await upsert_state_async(agent.agent_id, status="stopping", session_id=sid or session_id)
@@ -200,15 +220,16 @@ async def agent_destroy(db, async_tbl, action):
                 except asyncio.CancelledError:
                     pass
 
+        
         # Cleanup
         if sid:
             SESSIONS.pop(sid, None)
         if agent_id and AGENT_LATEST.get(agent_id) == sid:
-            pass  # keep or update elsewhere
+            AGENT_LATEST.pop(agent_id, None)
         if agent_id:
             JOKE_AGENTS.pop(agent_id, None)
 
-        await upsert_state_async(agent.agent_id, status="stopped", context={"ended_at": datetime.now().isoformat()}, session_id=sid or session_id)
+        await upsert_state_async(agent.agent_id, status="stopped", context={"ended_at": datetime.now(timezone.utc).isoformat()}, session_id=sid or session_id)
         print(f"Agent {agent.agent_id}/{sid or session_id} destroyed.")
     finally:
         if action_id:

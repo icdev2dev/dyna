@@ -110,6 +110,12 @@ def create_conversation_schemas():
     AGENTS_DB.create_table(MESSAGES_NAME, schema=MESSAGES_SCHEMA)
     AGENTS_DB.create_table(PARTICIPANTS_NAME, schema=PARTICIPANTS_SCHEMA)
 
+
+def delete_conversation_schemas():
+    AGENTS_DB.drop_table(CONVERSATIONS_NAME)
+    AGENTS_DB.drop_table(MESSAGES_NAME)
+    AGENTS_DB.drop_table(PARTICIPANTS_NAME)
+
 # Optionally call from create_all_schemas()
 
 # --------------------

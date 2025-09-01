@@ -1,5 +1,5 @@
 import lancedb, uuid, json
-from datetime import datetime
+from datetime import datetime, timezone
 import pandas as pd
 from .schemas import AGENTS_URI, MESSAGES_NAME
 DB = lancedb.connect(AGENTS_URI)
@@ -7,16 +7,17 @@ DB = lancedb.connect(AGENTS_URI)
 def append_message(conversation_id: str, author_id: str, role: str, text: str, reply_to: str | None = None, meta: dict | None = None) -> str:
     mid = str(uuid.uuid4())
     DB.open_table(MESSAGES_NAME).add([{
-        "message_id": mid,
-        "conversation_id": conversation_id,
-        "author_id": author_id,
-        "role": role,
-        "text": text,
-        "created_at": datetime.now().isoformat(),
-        "reply_to": reply_to,
-        "meta": json.dumps(meta) if meta else None,
+    "message_id": mid,
+    "conversation_id": conversation_id,
+    "author_id": author_id,
+    "role": role,
+    "text": text,
+    "created_at": datetime.now(timezone.utc).isoformat(),
+    "reply_to": reply_to,
+    "meta": json.dumps(meta) if meta else None,
     }])
     return mid
+
 
 def list_messages_since(conversation_id: str, since_iso: str | None, limit: int = 50) -> list[dict]:
     tbl = DB.open_table(MESSAGES_NAME)

@@ -1,5 +1,5 @@
 import lancedb, uuid, json
-from datetime import datetime
+from datetime import datetime, timezone
 from .schemas import AGENTS_URI, AGENT_STEPS_NAME
 import json as _json
 from ws_bus import emit_run_update
@@ -177,7 +177,7 @@ def append_agent_step(
     tbl = AGENTS_DB.open_table(AGENT_STEPS_NAME)
     rec = {
     "id": str(uuid.uuid4()),
-    "created_at": datetime.now().isoformat(),
+    "created_at": datetime.now(timezone.utc).isoformat(),
     "agent_id": agent_id,
     "session_id": session_id,
     "iteration": iteration,

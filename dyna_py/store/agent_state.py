@@ -1,6 +1,6 @@
 import lancedb
 import pyarrow as pa
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 import pandas as pd
 
@@ -20,7 +20,8 @@ def _safe_json_loads(s, *, default_if_fail=None):
 
 def upsert_agent_state(agent_id, status,*, iteration=None, result=None, context=None, history=None,session_id: str | None = None,):
     tbl = AGENTS_DB.open_table(AGENT_STATE_NAME)
-    now = datetime.now().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
+
     updates = {
         "agent_id": agent_id,
         "status": status,

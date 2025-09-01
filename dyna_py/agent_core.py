@@ -14,8 +14,21 @@ class InterruptMixin:
     @classmethod
     def interrupt_data_type(cls):
         return None
+    
     async def interrupt(self, guidance):
         await self.interrupt_queue.put(guidance)
+        # Wake the agent loop immediately if it has a tick_event
+        try:
+            ev = getattr(self, "_tick_event", None)
+            if ev is not None:
+                ev.set()
+        except Exception:
+            pass
+
+
+
+ 
+ 
     async def check_interrupt(self):
         if not self.interrupt_queue.empty():
             return await self.interrupt_queue.get()
@@ -35,6 +48,13 @@ class PauseMixin:
 
     def resume(self):
         self._pause_event.set()
+# Wake the loop so it doesn’t wait for timeout after a resume
+        try:
+            ev = getattr(self, "_tick_event", None)
+            if ev is not None:
+                ev.set()
+        except Exception:
+            pass
 
     def is_paused(self):
         return not self._pause_event.is_set()
@@ -51,3 +71,4 @@ class StopMixin:
 
     def should_stop(self):
         return self._stop_event.is_set()
+

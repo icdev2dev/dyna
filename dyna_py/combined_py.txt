@@ -44,6 +44,10 @@ class JokeAgent(PauseMixin, InterruptMixin, LoopingAgentBase):
             "subject": self.current_subject,
         }
 
+    async def run(self):
+# Explicitly call the LoopingAgentBase run to avoid AgentBase.run
+        return await LoopingAgentBase.run(self)
+    
     async def apply_guidance(self, g) -> Optional[dict]:
         
         try:
@@ -95,6 +99,7 @@ from store.agent_state import upsert_agent_state, get_agent_state
 from environment import environment_reload as _environment_reload
 from persona_agent import PersonaAgent
 from store.conversations import add_participant
+from store.conversations import add_participant_if_absent
 
 JOKE_AGENTS = {}  # agent_id -> JokeAgent
 SESSIONS = {}              # session_id -> instance
@@ -191,7 +196,7 @@ async def agent_create(db, async_tbl, action):
                 conversation_id=conversation_id,
                 persona_config=persona_config,
                 loop_interval=payload.get("loop_interval", 1.5),
-                state_updater=functools.partial(upsert_state_async, agent_id=agent_id, session_id=session_id),
+                state_updater=functools.partial(upsert_state_async, session_id=session_id),
                 steps_appender=functools.partial(
                     __import__("store.steps_async", fromlist=["append_step_async"]).append_step_async,
                     agent_id,
@@ -203,7 +208,7 @@ async def agent_create(db, async_tbl, action):
                 agent_id,
                 session_id,
                 initial_subject=initial_subject,
-                state_updater=functools.partial(upsert_state_async, agent_id=agent_id, session_id=session_id),
+                state_updater=functools.partial(upsert_state_async, session_id=session_id),
                 steps_appender=functools.partial(
                 # append_step_async signature (agent_id, iteration, **fields)
                 __import__("store.steps_async", fromlist=["append_step_async"]).append_step_async,
@@ -228,12 +233,29 @@ async def agent_create(db, async_tbl, action):
 
         try:
             if agent_type == "PersonaAgent" and conversation_id:
-                add_participant(conversation_id, agent_id, session_id, persona_config)
+                add_participant_if_absent(conversation_id, agent_id, session_id, persona_config)
+                
         except Exception as e:
             print(f"add_participant failed: {e}")
 
 
         task = asyncio.create_task(agent.run())
+
+
+
+
+        def _log_task_result(t):
+            import traceback, asyncio
+            try:
+                t.result()
+                print(f"Agent {agent.agent_id}/{session_id} task completed.")
+            except asyncio.CancelledError:
+                print(f"Agent {agent.agent_id}/{session_id} task cancelled.")
+            except Exception as e:
+                print(f"Agent {agent.agent_id}/{session_id} task failed: {e!r}")
+                traceback.print_exception(type(e), e, e.__traceback__)
+
+        task.add_done_callback(_log_task_result)
         agent._task = task
 
 
@@ -283,11 +305,12 @@ async def agent_destroy(db, async_tbl, action):
                 except asyncio.CancelledError:
                     pass
 
+        
         # Cleanup
         if sid:
             SESSIONS.pop(sid, None)
         if agent_id and AGENT_LATEST.get(agent_id) == sid:
-            pass  # keep or update elsewhere
+            AGENT_LATEST.pop(agent_id, None)
         if agent_id:
             JOKE_AGENTS.pop(agent_id, None)
 
@@ -549,8 +572,21 @@ class InterruptMixin:
     @classmethod
     def interrupt_data_type(cls):
         return None
+    
     async def interrupt(self, guidance):
         await self.interrupt_queue.put(guidance)
+        # Wake the agent loop immediately if it has a tick_event
+        try:
+            ev = getattr(self, "_tick_event", None)
+            if ev is not None:
+                ev.set()
+        except Exception:
+            pass
+
+
+
+ 
+ 
     async def check_interrupt(self):
         if not self.interrupt_queue.empty():
             return await self.interrupt_queue.get()
@@ -570,6 +606,13 @@ class PauseMixin:
 
     def resume(self):
         self._pause_event.set()
+# Wake the loop so it doesn’t wait for timeout after a resume
+        try:
+            ev = getattr(self, "_tick_event", None)
+            if ev is not None:
+                ev.set()
+        except Exception:
+            pass
 
     def is_paused(self):
         return not self._pause_event.is_set()
@@ -586,6 +629,7 @@ class StopMixin:
 
     def should_stop(self):
         return self._stop_event.is_set()
+
 
 
 === ./extract_routes.py ===
@@ -658,8 +702,9 @@ from typing import Optional, Dict, Any, List
 
 from agent_core import PauseMixin, InterruptMixin
 from agent_loop import LoopingAgentBase, StepOutcome
-from store.messages import list_messages_since, append_message
+from store.messages import list_messages_since
 from datetime import datetime, timedelta
+
 
 class PersonaAgent(PauseMixin, InterruptMixin, LoopingAgentBase):
     def __init__(
@@ -688,24 +733,6 @@ class PersonaAgent(PauseMixin, InterruptMixin, LoopingAgentBase):
             "persona": self.persona_config.get("name") or self.agent_id,
         }
 
-    async def apply_guidance(self, g) -> Optional[dict]:
-        if not isinstance(g, dict):
-            return None
-        t = g.get("type")
-        if t == "set_tone":
-            tone = str(g.get("tone") or "").strip()
-            if tone:
-                self.persona_config["tone"] = tone
-                return {"tone": tone}
-        if t == "speak_now":
-            self._force_tick = True
-        if t == "set_cooldown":
-            try:
-                self.cooldown_seconds = float(g.get("seconds", self.cooldown_seconds))
-                return {"cooldown_seconds": self.cooldown_seconds}
-            except Exception:
-                pass
-        return None
 
     def _can_speak_now(self) -> bool:
         if self._last_spoke_at is None:
@@ -725,24 +752,80 @@ class PersonaAgent(PauseMixin, InterruptMixin, LoopingAgentBase):
             return StepOutcome(status="info", text=None, state={"idle": True, "conversation_id": self.conversation_id})
 
         self.last_seen_iso = msgs[-1]["created_at"]
+        last_msg_id = msgs[-1].get("message_id")
+
+
+        try:
+            # Merge into agent context so agent_state.context carries it
+            self._merge_context({"last_seen_iso": self.last_seen_iso, "last_msg_id": last_msg_id})
+        except Exception:
+            pass
+
+
         last = msgs[-1]
+
+
         if last.get("author_id") == self.agent_id:
-            return StepOutcome(status="info", text=None, state={"seen_self": True, "conversation_id": self.conversation_id})
+            return StepOutcome(status="info", data={"intent": {"type": "silent", "reason": "seen_self"}}, state={"conversation_id": self.conversation_id})
 
-        if not self._can_speak_now():
-            return StepOutcome(status="info", text=None, state={"cooldown": True, "conversation_id": self.conversation_id})
+        if not self._can_speak_now() and not self._force_tick:
+            return StepOutcome(status="info", data={"intent": {"type": "silent", "reason": "cooldown"}}, state={"conversation_id": self.conversation_id})
 
-        # Simple activation: reply if last message is user or another agent
-        window = msgs[-10:]  # small recent window
+        window = msgs[-10:]
         reply = await self._generate_reply(window)
-        append_message(self.conversation_id, self.agent_id, "agent", reply, meta={"session_id": self.session_id})
-        self._last_spoke_at = datetime.now()
 
         return StepOutcome(
             status="ok",
-            text=reply,
-            state={"conversation_id": self.conversation_id, "spoke": True, "tone": self.persona_config.get("tone")}
+            data={"intent": {"type": "speak", "mode": "answer", "text": reply}},
+            state={"conversation_id": self.conversation_id}
         )
+
+    
+    async def run(self):
+    # Explicitly call the LoopingAgentBase run to avoid AgentBase.run
+        return await LoopingAgentBase.run(self)
+    
+        # Optionally handle 'stop' guidance (kept optional)
+    async def apply_guidance(self, g) -> Optional[dict]:
+        if not isinstance(g, dict):
+            return None
+        t = (g.get("type") or "").strip()
+
+        if t in ("rehydrate", "set_last_seen"):
+            lsi = g.get("last_seen_iso") or g.get("last_seen")
+            if lsi:
+                self.last_seen_iso = str(lsi)
+                return {"last_seen_iso": self.last_seen_iso}
+
+        if t == "set_tone":
+            tone = str(g.get("tone") or "").strip()
+            if tone:
+                self.persona_config["tone"] = tone
+                return {"tone": tone}
+
+        if t == "speak_now":
+            self._force_tick = True
+            return {"force_tick": True}
+
+        if t == "set_cooldown":
+            try:
+                self.cooldown_seconds = float(g.get("seconds", self.cooldown_seconds))
+                return {"cooldown_seconds": self.cooldown_seconds}
+            except Exception:
+                pass
+
+        # NEW: When a new_message arrives, wake the agent and bypass cooldown for this tick
+        if t == "new_message":
+            self._force_tick = True
+            # optionally include a tiny breadcrumb for observability
+            return {"force_tick": True, "last_new_message_id": g.get("message_id")}
+
+        if t == "stop":
+            self.request_stop()
+            return {"stopping": True}
+
+        return None
+    
 
 === ./agent_loop.py ===
 import asyncio
@@ -779,6 +862,9 @@ class LoopingAgentBase(AgentBase, StopMixin):
         guidance_interpreter: Optional[Callable[[GuidanceInput], Awaitable[GuidanceDict]]] = None,
         persist_guidance_raw: bool = True,
         persist_guidance_normalized: bool = True,
+
+
+
     ):
         
         super().__init__(agent_id)
@@ -796,11 +882,21 @@ class LoopingAgentBase(AgentBase, StopMixin):
         # Ensure agent_type in context by default
         self._context.setdefault("agent_type", self.__class__.__name__)
         self.current_subject = None
+
+        self._tick_event: Optional[asyncio.Event] = asyncio.Event()
+        self._tick_event.set()  # ensure the first tick runs immediately
         # Paused flag is computed per-tick if PauseMixin is present
+        # NEW: simple tool registry (name -> async callable(args)->result)
+        self._tool_registry: Dict[str, Any] = {}
 
     # ---------- Overridables (subclasses implement minimal logic) ----------
     def initial_context(self) -> Optional[dict]:
         return {"agent_type": self.__class__.__name__}
+
+
+    # NEW: allow registering tools per agent (or wire at construction)
+    def register_tool(self, name: str, coro):
+        self._tool_registry[name] = coro
 
     async def on_start(self) -> Optional[dict]:
         return None
@@ -837,14 +933,18 @@ class LoopingAgentBase(AgentBase, StopMixin):
     async def _state_update(self, status=None, iteration=None, result=None, context=None, history=None):
         if not self._state_updater:
             return
-        await self._state_updater(
-            agent_id=self.agent_id,
-            status=status,
-            iteration=iteration,
-            result=result,
-            context=context,
-            history=history,
-        )
+        try:
+            await self._state_updater(
+                agent_id=self.agent_id,
+                status=status,
+                iteration=iteration,
+                result=result,
+                context=context,
+                history=history,
+            )
+        except Exception as e:
+            
+            print(f"{self.__class__.__name__} {self.agent_id}: state_updater error: {e}")
 
     def _paused_flag(self) -> bool:
         # Duck-typed PauseMixin
@@ -876,10 +976,59 @@ class LoopingAgentBase(AgentBase, StopMixin):
         snap["paused"] = self._paused_flag()
         return snap
 
-    # ---------- Main run loop ----------
+
+
+    async def _wait_for_tick_or_timeout(self):
+        try:
+        # Wake either by interrupt (event set) or fallback timer
+            await asyncio.wait_for(self._tick_event.wait(), timeout=self.loop_interval)
+        except asyncio.TimeoutError:
+            pass
+        finally:
+        # Clear event (if it was set). If new interrupts arrive later, they set it again.
+            try:
+                self._tick_event.clear()
+            except Exception:
+                pass
+
+
+
+    async def _drain_interrupts_and_apply(self) -> Optional[dict]:
+        """
+        Drain the interrupt queue fully. For each item:
+        - interpret -> normalized
+        - apply_guidance(normalized)
+        - merge context deltas
+        Returns a guidance object to persist for this tick (includes raw+normalized of the LAST item by default).
+        If you want to persist all, you could aggregate into a list instead.
+        """
+        persisted = None
+        while True:
+            g_raw = await self._check_interrupt()
+            if g_raw is None:
+                break
+            try:
+                g_norm = await self.interpret_guidance(g_raw)
+                ctx_delta = await self.apply_guidance(g_norm if g_norm is not None else g_raw)
+                self._merge_context(ctx_delta)
+                # Build guidance-to-persist payload respecting flags
+                g_obj = {}
+                if self.persist_guidance_raw:
+                    g_obj["raw"] = g_raw
+                if self.persist_guidance_normalized:
+                    g_obj["normalized"] = g_norm
+                persisted = g_obj if g_obj else None
+            except Exception as ge:
+            # Keep draining; log and continue
+                print(f"{self.__class__.__name__} {self.agent_id}: guidance error: {ge}")
+            # You could also set persisted to an error marker if desired
+                continue
+        return persisted
+
+
+
     async def run(self):
         step = 0
-        # starting
         await self._state_update(
             status="starting",
             iteration=step,
@@ -899,70 +1048,44 @@ class LoopingAgentBase(AgentBase, StopMixin):
                 print(f"{self.__class__.__name__} {self.agent_id}: stopping.")
                 break
 
-            await self._wait_if_paused()
+            # Wait to be woken by interrupts or fallback timer
+            await self._wait_for_tick_or_timeout()
 
-            # Allow stop after pause
+            # Pause gate
+            await self._wait_if_paused()
             if self.should_stop():
                 print(f"{self.__class__.__name__} {self.agent_id}: stopping after pause.")
                 break
 
-            # Handle guidance (if InterruptMixin present)
-            guidance_raw = await self._check_interrupt()
-            guidance_norm = None
-            context_delta_from_guidance = None
-            guidance_to_persist = None
+            # Drain and apply all interrupts for this tick
+            guidance_to_persist = await self._drain_interrupts_and_apply()
 
-            if guidance_raw is not None:
-                try:
-                    guidance_norm = await self.interpret_guidance(guidance_raw)
-                    context_delta_from_guidance = await self.apply_guidance(guidance_norm if guidance_norm is not None else guidance_raw)
-                    self._merge_context(context_delta_from_guidance)
-                except Exception as ge:
-                    # Guidance processing error; record as info step later
-                    print(f"{self.__class__.__name__} {self.agent_id}: guidance error: {ge}")
-
-                # Build guidance object to persist this tick (if any)
-                g_obj: Dict[str, Any] = {}
-                if self.persist_guidance_raw:
-                    g_obj["raw"] = guidance_raw
-                if self.persist_guidance_normalized:
-                    g_obj["normalized"] = guidance_norm
-                guidance_to_persist = g_obj if g_obj else None
-
-            # Execute one tick
             outcome = StepOutcome()
-
-            
             try:
                 outcome = await self.do_tick(step)
                 if not isinstance(outcome, StepOutcome):
-                    # Allow simple returns
                     outcome = StepOutcome(text=str(outcome))
             except Exception as e:
-                outcome = StepOutcome(
-                    status="error",
-                    error=str(e),
-                    text=None,
-                    data=None,
-                    state=None,
-                )
+                outcome = StepOutcome(status="error", error=str(e))
                 print(f"{self.__class__.__name__} {self.agent_id} tick error @ step {step}: {e}")
                 if not self.should_continue_on_error(e):
-                    # Record and then stop
                     await self._append_step(step, outcome, guidance_to_persist)
-                    await self._state_update(
-                        status="error",
-                        iteration=step,
-                        result=outcome.error,
-                        context=self._context_snapshot(),
-                    )
+                    await self._state_update(status="error", iteration=step, result=outcome.error, context=self._context_snapshot())
                     break
 
-            # If guidance influenced this tick and outcome.guidance is empty, attach it
+            # Execute agent intent (silent/speak/stop for now)
+            try:
+                if isinstance(outcome.data, dict):
+                    intent = outcome.data.get("intent")
+                    if intent:
+                        outcome = await self._execute_intent(step, intent, outcome)
+            except Exception as ie:
+                print(f"{self.__class__.__name__} {self.agent_id}: intent execution error: {ie}")
+                outcome = StepOutcome(status="error", error=str(ie))
+
             if guidance_to_persist and outcome.guidance is None:
                 outcome.guidance = guidance_to_persist
 
-            # Persist step and state
             await self._append_step(step, outcome, outcome.guidance)
             await self._state_update(
                 status="running",
@@ -971,9 +1094,9 @@ class LoopingAgentBase(AgentBase, StopMixin):
                 context=self._context_snapshot(),
             )
 
-            await asyncio.sleep(self.loop_interval)
             step += 1
-
+            # No sleep; next loop waits on tick event or timeout
+            
         try:
             await self.on_stop()
         finally:
@@ -1000,6 +1123,142 @@ class LoopingAgentBase(AgentBase, StopMixin):
         except Exception as e:
             print(f"{self.__class__.__name__} {self.agent_id}: steps_appender error: {e}")
 
+
+
+
+
+
+
+
+
+# NEW: Core executor for agent intents
+    async def _execute_intent(self, step: int, intent: dict, outcome: StepOutcome) -> StepOutcome:
+        t = (intent.get("type") or "").lower()
+
+        if t == "silent":
+            # no text; annotate state
+            st = (outcome.state or {}) | {"silent": True, "reason": intent.get("reason")}
+            outcome.status = "info"
+            outcome.text = None
+            outcome.state = st
+            return outcome
+
+        if t == "speak":
+            text = intent.get("text") or ""
+            mode = intent.get("mode")
+            await self._append_conversation_message_if_persona(text, mode)
+            outcome.status = "ok"
+            outcome.text = text
+            st = (outcome.state or {}) | {"spoke": True, "mode": mode}
+            outcome.state = st
+            # Clear force_tick if present
+            try:
+                if getattr(self, "_force_tick", False):
+                    self._force_tick = False
+            except Exception:
+                pass
+            return outcome
+
+        if t == "call_tool":
+            exec_mode = (intent.get("execution") or "inline").lower()
+            if exec_mode != "inline":
+                raise ValueError("Only inline tool execution is supported right now")
+            tools = intent.get("tools") or []
+            mode_after = intent.get("mode_after") or "insight"
+            timeout_s = float(intent.get("timeout_s", 12.0))
+            tool_results = await self._run_tools(tools, timeout_s=timeout_s)
+
+            # Race-avoid: if newer message arrived in the conversation, skip speaking
+            if await self._conversation_changed_since_last_seen():
+                outcome.status = "info"
+                outcome.text = None
+                outcome.data = (outcome.data or {}) | {"tool_results": tool_results}
+                outcome.state = (outcome.state or {}) | {"race_avoided": True}
+                return outcome
+
+            # Ask agent to compose final reply after tools if such hook exists
+            if hasattr(self, "_compose_reply_after_tools"):
+                try:
+                    text = await self._compose_reply_after_tools(tool_results, mode_after)
+                except Exception:
+                    text = f"[{mode_after}] {tool_results}"
+            else:
+                text = f"[{mode_after}] {tool_results}"
+
+            await self._append_conversation_message_if_persona(text, mode_after)
+            outcome.status = "ok"
+            outcome.text = text
+            outcome.data = (outcome.data or {}) | {"tool_results": tool_results}
+            outcome.state = (outcome.state or {}) | {"spoke": True, "mode": mode_after}
+            try:
+                if getattr(self, "_force_tick", False):
+                    self._force_tick = False
+            except Exception:
+                pass
+            return outcome
+
+        if t == "stop":
+            self.request_stop()
+            outcome.status = "info"
+            outcome.text = None
+            outcome.state = (outcome.state or {}) | {"stopping": True, "reason": intent.get("reason")}
+            return outcome
+
+        # Unknown
+        outcome.notes = (outcome.notes or "") + " | unknown_intent"
+        return outcome
+
+    # NEW: Post a message if this is a PersonaAgent (has conversation_id)
+    async def _append_conversation_message_if_persona(self, text: str, mode: Optional[str] = None):
+        try:
+            conv_id = getattr(self, "conversation_id", None)
+            if not conv_id:
+                return
+            from store.messages import append_message
+            meta = {"session_id": self.session_id}
+            if mode:
+                meta["mode"] = mode
+            append_message(conv_id, self.agent_id, "agent", text, meta=meta)
+            if hasattr(self, "_last_spoke_at"):
+                from datetime import datetime as _dt
+                self._last_spoke_at = _dt.now()
+        except Exception as e:
+            print(f"{self.__class__.__name__} {self.agent_id}: append_message error: {e}")
+
+    # NEW: Inline tools with timeout, registry-based
+    async def _run_tools(self, tools: list[dict], timeout_s: float = 10.0):
+        async def call_one(t):
+            name = t.get("name")
+            args = t.get("args", {}) or {}
+            fn = self._tool_registry.get(name)
+            if not fn or not callable(fn):
+                return {"name": name, "args": args, "error": "unknown_tool"}
+            try:
+                res = await fn(args)
+                return {"name": name, "args": args, "result": res}
+            except Exception as e:
+                return {"name": name, "args": args, "error": str(e)}
+
+        try:
+            return await asyncio.wait_for(asyncio.gather(*(call_one(t) for t in tools)), timeout=timeout_s)
+        except asyncio.TimeoutError:
+            return [
+                {"name": t.get("name"), "args": t.get("args", {}) or {}, "error": "timeout"}
+                for t in tools
+            ]
+
+    # NEW: Race-avoidance: did new messages arrive?
+    async def _conversation_changed_since_last_seen(self) -> bool:
+        try:
+            conv_id = getattr(self, "conversation_id", None)
+            last_seen = getattr(self, "last_seen_iso", None)
+            if not conv_id or not last_seen:
+                return False
+            from store.messages import list_messages_since
+            return bool(list_messages_since(conv_id, last_seen, limit=1))
+        except Exception:
+            return False
+        
 
 === ./metadata_registry_tests.py ===
 import unittest
@@ -1143,7 +1402,7 @@ async def tell_a_joke_v2(subject="foot", guidance="") -> StepFrameOut:
 import lancedb
 import pyarrow as pa
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 import json
 
@@ -1225,7 +1484,7 @@ def create_action(
     record = {
         "action_id": action_id or str(uuid.uuid4()),
         "type": action_type,
-        "created_at": created_at or datetime.now().isoformat(),
+        "created_at": created_at or datetime.now(timezone.utc).isoformat(),
         "actor": actor,
         "processed": processed,
         "urgency": urgency,
@@ -1704,17 +1963,21 @@ if __name__ == "__main__":
 
 
 === ./bamp3.py ===
-from baml_client.async_client import b
-from baml_client.types import MonikerStepFrameIn, MonikerStepFrameOut, MonikerGuidance, MonikerState
+from baml_client import b
 
-
-async def tell_a_joke(subject="foot") -> str:
-    initial_state = MonikerState()
-    guidance = MonikerGuidance(topic="dogs")
-    a = MonikerStepFrameIn(step="0", state=initial_state,guidance=guidance)
-    joke_text = f"tell a joke about john on the subject of {subject}"
-    return await  b.TellAJoke(a, joke_text)
-
+print (b.RAG("how to configure s3", ''' 
+             # background 
+             - the customer is interested in setting up s3 for lambda use
+             # Use Cases
+             ## how to setup  s3 (general  case)
+             - login to console
+             - look at s3
+             ## how to setup s3 for AWS Lambda
+             - ensure that you have a lambda function
+             - configure s3 to trust s3
+             # how to setup ec2
+             - this is hard
+             '''))
 
 
 === ./metadata_registry.py ===
@@ -1756,6 +2019,17 @@ from agent import handle_actions, poll_lancedb_for_actions
 import lancedb
 from queue_imp import  AGENTS_URI, QUEUE_NAME
 
+import pandas as pd
+from store.schemas import MESSAGES_NAME, PARTICIPANTS_NAME, CONVERSATIONS_NAME
+from queue_imp import agent_interrupt_action, persona_agent_create
+from store.agent_state import get_agent_state
+import json
+from collections import deque
+
+
+
+
+
 
 async def queue_watcher(db, async_tbl):
     while True:
@@ -1767,11 +2041,213 @@ async def get_db_tbl():
     async_tbl = await db.open_table(QUEUE_NAME)
     return (db, async_tbl)
 
+
+
+
+
+
+
+async def conversation_fanout(db, interval_s: float = 1.0):
+    """
+    Fan-out new conversation messages into agent_interrupt queue actions.
+    Keeps in-memory cursor (last_ts) and a small dedupe set with bounded size.
+    """
+    last_ts: str | None = None
+    processed_ids_set: set[str] = set()
+    processed_order = deque(maxlen=5000)  # cap memory
+
+    while True:
+        try:
+            mtbl = await db.open_table(MESSAGES_NAME)
+            q = mtbl.query()
+            if last_ts:
+                q = q.where(f"created_at > '{last_ts}'")
+            df = await q.to_pandas()
+
+            if df is None or df.empty:
+                await asyncio.sleep(interval_s)
+                continue
+
+            # Bootstrap: advance cursor to latest on first run
+            if last_ts is None:
+                try:
+                    last_ts = df["created_at"].max()
+                except Exception:
+                    last_ts = str(df.iloc[-1]["created_at"])
+                await asyncio.sleep(interval_s)
+                continue
+
+            try:
+                df = df.sort_values("created_at", ascending=True)
+            except Exception:
+                pass
+
+            for _, r in df.iterrows():
+                mid = str(r.get("message_id"))
+                if not mid:
+                    continue
+
+                # bounded dedupe
+                if mid in processed_ids_set:
+                    continue
+                if len(processed_order) == processed_order.maxlen:
+                    old = processed_order.popleft()
+                    processed_ids_set.discard(old)
+                processed_order.append(mid)
+                processed_ids_set.add(mid)
+
+                last_ts = str(r.get("created_at"))
+                cid = str(r.get("conversation_id"))
+                author_id = str(r.get("author_id") or "")
+                role = str(r.get("role") or "")
+                text = str(r.get("text") or "")
+
+                # Load participants for the conversation
+                ptbl = await db.open_table(PARTICIPANTS_NAME)
+                pdf = await ptbl.query().where(f"conversation_id == '{cid}'").to_pandas()
+
+
+                if pdf is None or pdf.empty:
+                    continue
+
+                seen_pairs = set()  # (agent_id, session_id)
+
+                for _, pr in pdf.iterrows():
+                    agent_id_p = str(pr.get("agent_id"))
+                    session_id_p = str(pr.get("session_id"))
+                    pair = (agent_id_p, session_id_p)
+                    if pair in seen_pairs:
+                        continue
+                    seen_pairs.add(pair)
+
+                    # Skip if the author is the same agent
+                    if author_id and author_id == agent_id_p:
+                        continue
+
+                    guidance = {
+                        "type": "new_message",
+                        "message_id": mid,
+                        "conversation_id": cid,
+                        "author_id": author_id,
+                        "role": role,
+                        "text": text,
+                        "created_at": last_ts,
+                    }
+
+                    await asyncio.to_thread(
+                        agent_interrupt_action,
+                        agent_id_p,
+                        session_id_p,
+                        "conversation",
+                        guidance
+                    )
+
+
+            await asyncio.sleep(interval_s)
+        except Exception as e:
+            print(f"conversation_fanout error: {e}")
+            await asyncio.sleep(interval_s)
+
+
+
+
+async def rehydrate_active_personas(db, interval_s: float = 60.0):
+    """
+    Rehydrate PersonaAgents for active conversations based on participants table.
+    For sessions not already live, enqueue create_agent; then enqueue a rehydrate interrupt
+    carrying last_seen_iso if available from agent_state.context.
+    """
+    # Avoid re-enqueueing during our own lifetime
+    rehydrated_sessions: set[str] = set()
+
+    # Late import to avoid cycles
+    from agent import SESSIONS
+
+    while True:
+        try:
+            conv_tbl = await db.open_table(CONVERSATIONS_NAME)
+            cdf = await conv_tbl.query().where("status == 'active'").to_pandas()
+
+            if cdf is None or cdf.empty:
+                await asyncio.sleep(interval_s)
+                continue
+
+            # For each active conversation, fetch participants
+            part_tbl = await db.open_table(PARTICIPANTS_NAME)
+            for _, c in cdf.iterrows():
+                cid = str(c.get("conversation_id"))
+                pdf = await part_tbl.query().where(f"conversation_id == '{cid}'").to_pandas()
+                if pdf is None or pdf.empty:
+                    continue
+
+                for _, pr in pdf.iterrows():
+                    agent_id = str(pr.get("agent_id"))
+                    session_id = str(pr.get("session_id") or "")
+                    if not session_id:
+                        continue
+                    if session_id in SESSIONS or session_id in rehydrated_sessions:
+                        continue
+
+                    # persona_config is JSON string in participants table; load it if present
+                    persona_config_raw = pr.get("persona_config")
+                    try:
+                        if isinstance(persona_config_raw, (dict, list)):
+                            persona_config = persona_config_raw
+                        elif isinstance(persona_config_raw, str) and persona_config_raw.strip():
+                            persona_config = json.loads(persona_config_raw)
+                        else:
+                            persona_config = {}
+                    except Exception:
+                        persona_config = {}
+
+                    # Enqueue PersonaAgent creation preserving session_id
+                    await asyncio.to_thread(
+                        persona_agent_create,
+                        agent_id,
+                        "rehydrator",
+                        cid,
+                        persona_config,
+                        session_id=session_id
+                    )
+
+                    # Fetch stored state to get last_seen_iso (if any) to avoid replay
+                    try:
+                        st = await asyncio.to_thread(get_agent_state, agent_id, session_id)
+                        ctx = (st or {}).get("context") or {}
+                        last_seen_iso = ctx.get("last_seen_iso")
+                    except Exception:
+                        last_seen_iso = None
+
+                    guidance = {"type": "rehydrate"}
+                    if last_seen_iso:
+                        guidance["last_seen_iso"] = last_seen_iso
+
+                    # Enqueue a rehydrate interrupt
+                    await asyncio.to_thread(
+                        agent_interrupt_action,
+                        agent_id,
+                        session_id,
+                        "rehydrator",
+                        guidance
+                    )
+
+                    rehydrated_sessions.add(session_id)
+
+            await asyncio.sleep(interval_s)
+
+        except Exception as e:
+            print(f"rehydrate_active_personas error: {e}")
+            await asyncio.sleep(interval_s)
+
+
+
 async def main():
     (db, async_tbl) = await get_db_tbl()
 
     await asyncio.gather(
         queue_watcher(db, async_tbl),
+        conversation_fanout(db),         # Phase 4
+        rehydrate_active_personas(db),   # Phase 5
         # ...other background tasks
     )
 
@@ -1880,9 +2356,10 @@ async def tell_a_joke(subject="foot") -> str:
 
 
 
+
 === ./store/agent_steps.py ===
 import lancedb, uuid, json
-from datetime import datetime
+from datetime import datetime, timezone
 from .schemas import AGENTS_URI, AGENT_STEPS_NAME
 import json as _json
 from ws_bus import emit_run_update
@@ -2060,7 +2537,7 @@ def append_agent_step(
     tbl = AGENTS_DB.open_table(AGENT_STEPS_NAME)
     rec = {
     "id": str(uuid.uuid4()),
-    "created_at": datetime.now().isoformat(),
+    "created_at": datetime.now(timezone.utc).isoformat(),
     "agent_id": agent_id,
     "session_id": session_id,
     "iteration": iteration,
@@ -2216,7 +2693,7 @@ if __name__ == "__main__":
 === ./store/agent_state.py ===
 import lancedb
 import pyarrow as pa
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 import pandas as pd
 
@@ -2236,7 +2713,8 @@ def _safe_json_loads(s, *, default_if_fail=None):
 
 def upsert_agent_state(agent_id, status,*, iteration=None, result=None, context=None, history=None,session_id: str | None = None,):
     tbl = AGENTS_DB.open_table(AGENT_STATE_NAME)
-    now = datetime.now().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
+
     updates = {
         "agent_id": agent_id,
         "status": status,
@@ -2469,7 +2947,7 @@ def get_last_step_for_session_id(session_id):
 
 === ./store/messages.py ===
 import lancedb, uuid, json
-from datetime import datetime
+from datetime import datetime, timezone
 import pandas as pd
 from .schemas import AGENTS_URI, MESSAGES_NAME
 DB = lancedb.connect(AGENTS_URI)
@@ -2477,16 +2955,17 @@ DB = lancedb.connect(AGENTS_URI)
 def append_message(conversation_id: str, author_id: str, role: str, text: str, reply_to: str | None = None, meta: dict | None = None) -> str:
     mid = str(uuid.uuid4())
     DB.open_table(MESSAGES_NAME).add([{
-        "message_id": mid,
-        "conversation_id": conversation_id,
-        "author_id": author_id,
-        "role": role,
-        "text": text,
-        "created_at": datetime.now().isoformat(),
-        "reply_to": reply_to,
-        "meta": json.dumps(meta) if meta else None,
+    "message_id": mid,
+    "conversation_id": conversation_id,
+    "author_id": author_id,
+    "role": role,
+    "text": text,
+    "created_at": datetime.now(timezone.utc).isoformat(),
+    "reply_to": reply_to,
+    "meta": json.dumps(meta) if meta else None,
     }])
     return mid
+
 
 def list_messages_since(conversation_id: str, since_iso: str | None, limit: int = 50) -> list[dict]:
     tbl = DB.open_table(MESSAGES_NAME)
@@ -2691,6 +3170,7 @@ import lancedb
 import pandas as pd
 
 from .schemas import AGENTS_URI, CONVERSATIONS_NAME, PARTICIPANTS_NAME, MESSAGES_NAME
+import math
 
 DB = lancedb.connect(AGENTS_URI)
 
@@ -3000,6 +3480,20 @@ def get_conversation_messages_and_participants(
         })
 
     return {"messages": msgs, "participants": participants}
+
+
+
+def participant_exists(conversation_id: str, agent_id: str, session_id: str) -> bool:
+    tbl = DB.open_table(PARTICIPANTS_NAME)
+    df = tbl.search().where(
+    f"conversation_id == '{_escape(conversation_id)}' AND agent_id == '{_escape(agent_id)}' AND session_id == '{_escape(session_id)}'"
+    ).to_pandas()
+    return (df is not None) and (not df.empty)
+
+def add_participant_if_absent(conversation_id: str, agent_id: str, session_id: str, persona_config: dict | None = None) -> int:
+    if participant_exists(conversation_id, agent_id, session_id):
+        return 0
+    return add_participant(conversation_id, agent_id, session_id, persona_config)
 
 
 === ./logic/form_logic.py ===

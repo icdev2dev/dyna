@@ -1,7 +1,7 @@
 import lancedb
 import pyarrow as pa
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 import json
 
@@ -83,7 +83,7 @@ def create_action(
     record = {
         "action_id": action_id or str(uuid.uuid4()),
         "type": action_type,
-        "created_at": created_at or datetime.now().isoformat(),
+        "created_at": created_at or datetime.now(timezone.utc).isoformat(),
         "actor": actor,
         "processed": processed,
         "urgency": urgency,

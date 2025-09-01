@@ -7,6 +7,7 @@ import lancedb
 import pandas as pd
 
 from .schemas import AGENTS_URI, CONVERSATIONS_NAME, PARTICIPANTS_NAME, MESSAGES_NAME
+import math
 
 DB = lancedb.connect(AGENTS_URI)
 
@@ -316,3 +317,17 @@ def get_conversation_messages_and_participants(
         })
 
     return {"messages": msgs, "participants": participants}
+
+
+
+def participant_exists(conversation_id: str, agent_id: str, session_id: str) -> bool:
+    tbl = DB.open_table(PARTICIPANTS_NAME)
+    df = tbl.search().where(
+    f"conversation_id == '{_escape(conversation_id)}' AND agent_id == '{_escape(agent_id)}' AND session_id == '{_escape(session_id)}'"
+    ).to_pandas()
+    return (df is not None) and (not df.empty)
+
+def add_participant_if_absent(conversation_id: str, agent_id: str, session_id: str, persona_config: dict | None = None) -> int:
+    if participant_exists(conversation_id, agent_id, session_id):
+        return 0
+    return add_participant(conversation_id, agent_id, session_id, persona_config)

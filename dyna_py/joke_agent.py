@@ -43,6 +43,10 @@ class JokeAgent(PauseMixin, InterruptMixin, LoopingAgentBase):
             "subject": self.current_subject,
         }
 
+    async def run(self):
+# Explicitly call the LoopingAgentBase run to avoid AgentBase.run
+        return await LoopingAgentBase.run(self)
+    
     async def apply_guidance(self, g) -> Optional[dict]:
         
         try:

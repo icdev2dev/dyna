@@ -76,7 +76,41 @@ AGENT_STATE_SCHEMA = pa.schema([
     pa.field("context", pa.string(), nullable=True),        # agentic data
 ])
 
+CONVERSATIONS_NAME = "conversations"
+CONVERSATIONS_SCHEMA = pa.schema([
+    pa.field("conversation_id", pa.string(), nullable=False),
+    pa.field("title", pa.string(), nullable=True),
+    pa.field("status", pa.string(), nullable=True),   # "active" | "ended"
+    pa.field("created_at", pa.string(), nullable=False),
+])
 
+MESSAGES_NAME = "messages"
+MESSAGES_SCHEMA = pa.schema([
+    pa.field("message_id", pa.string(), nullable=False),
+    pa.field("conversation_id", pa.string(), nullable=False),
+    pa.field("author_id", pa.string(), nullable=False),  # agent_id or "user"
+    pa.field("role", pa.string(), nullable=False),       # "agent" | "user" | "system"
+    pa.field("text", pa.string(), nullable=False),
+    pa.field("created_at", pa.string(), nullable=False),
+    pa.field("reply_to", pa.string(), nullable=True),
+    pa.field("meta", pa.string(), nullable=True),        # JSON
+])
+
+PARTICIPANTS_NAME = "participants"
+PARTICIPANTS_SCHEMA = pa.schema([
+    pa.field("conversation_id", pa.string(), nullable=False),
+    pa.field("agent_id", pa.string(), nullable=False),
+    pa.field("session_id", pa.string(), nullable=False),
+    pa.field("persona_config", pa.string(), nullable=True),  # JSON
+    pa.field("joined_at", pa.string(), nullable=False),
+])
+
+def create_conversation_schemas():
+    AGENTS_DB.create_table(CONVERSATIONS_NAME, schema=CONVERSATIONS_SCHEMA)
+    AGENTS_DB.create_table(MESSAGES_NAME, schema=MESSAGES_SCHEMA)
+    AGENTS_DB.create_table(PARTICIPANTS_NAME, schema=PARTICIPANTS_SCHEMA)
+
+# Optionally call from create_all_schemas()
 
 # --------------------
 # Schema management

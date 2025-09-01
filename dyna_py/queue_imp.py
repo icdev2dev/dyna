@@ -151,6 +151,33 @@ def agent_resume_action(agent_id, session_id: str , actor="user", ):
 async def mark_action_processed_async(async_tbl, action_id: str):
     await async_tbl.update(where=f'action_id == "{action_id}"', updates={"processed": True})
 
+
+
+
+
+
+
+
+
+
+from store.conversations import create_conversation as _create_conversation
+
+def create_conversation(title: str | None = None) -> str:
+    return _create_conversation(title)
+
+def persona_agent_create(agent_id, actor, conversation_id, persona_config: dict, session_id: str | None = None):
+    sid = session_id or str(uuid.uuid4())
+    payload = json.dumps({
+        "agent_id": agent_id,
+        "agent_type": "PersonaAgent",
+        "conversation_id": conversation_id,
+        "persona_config": persona_config,
+        "session_id": sid,
+        "loop_interval": 1.5
+    })
+    create_action(action_type="create_agent", actor=actor, payload=payload, session_id=sid)
+    return sid
+
 # --------------------
 # Main/test (remove or modify as needed)
 # --------------------

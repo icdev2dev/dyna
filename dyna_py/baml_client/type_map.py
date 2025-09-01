@@ -31,6 +31,9 @@ type_map = {
     "types.MonikerStepFrameOut": types.MonikerStepFrameOut,
     "stream_types.MonikerStepFrameOut": stream_types.MonikerStepFrameOut,
 
+    "types.Response": types.Response,
+    "stream_types.Response": stream_types.Response,
+
     "types.StepFrameIn": types.StepFrameIn,
     "stream_types.StepFrameIn": stream_types.StepFrameIn,
 

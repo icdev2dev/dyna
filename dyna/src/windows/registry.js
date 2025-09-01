@@ -7,6 +7,9 @@ import RenderOrderEditor from './RenderOrderEditor.svelte';
 import RenderAgentRuns from './RenderAgentRuns.svelte';
 import RenderRunDetail from './RenderRunDetail.svelte';
 import LiveRunRenderer from './RenderLiveRun.svelte';
+import RenderConversations from './RenderConversations.svelte';
+import RenderConversationThread from './RenderConversationThread.svelte';
+import RenderAgentSessions from './RenderAgentSessions.svelte';
 
 
 export const WINDOW_RENDERERS = {
@@ -18,5 +21,8 @@ export const WINDOW_RENDERERS = {
     orderEditor: RenderOrderEditor,
     agentRuns: RenderAgentRuns,
     runDetail: RenderRunDetail,
-    liveRun: LiveRunRenderer
+    liveRun: LiveRunRenderer,
+    conversations: RenderConversations,
+    conversationThread: RenderConversationThread,
+    agentSessions: RenderAgentSessions
 };

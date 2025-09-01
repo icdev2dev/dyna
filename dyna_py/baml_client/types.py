@@ -51,7 +51,7 @@ class GenericStepOutStatus(str, Enum):
     ERR = "ERR"
 
 # #########################################################################
-# Generated classes (7)
+# Generated classes (8)
 # #########################################################################
 
 class MonikerData(BaseModel):
@@ -79,6 +79,10 @@ class MonikerStepFrameOut(BaseModel):
     data: "MonikerData"
     done: bool
     notes: typing.Optional[str] = None
+
+class Response(BaseModel):
+    can_the_question_be_answered: bool
+    raionale: str
 
 class StepFrameIn(BaseModel):
     context: str

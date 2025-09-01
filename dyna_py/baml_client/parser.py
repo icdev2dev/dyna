@@ -28,6 +28,12 @@ class LlmResponseParser:
         result = self.__options.merge_options(baml_options).parse_response(function_name="JokeTeller", llm_response=llm_response, mode="request")
         return typing.cast(str, result)
 
+    def RAG(
+        self, llm_response: str, baml_options: BamlCallOptions = {},
+    ) -> types.Response:
+        result = self.__options.merge_options(baml_options).parse_response(function_name="RAG", llm_response=llm_response, mode="request")
+        return typing.cast(types.Response, result)
+
     def SampleInput(
         self, llm_response: str, baml_options: BamlCallOptions = {},
     ) -> types.StepFrameIn:
@@ -65,6 +71,12 @@ class LlmStreamParser:
     ) -> str:
         result = self.__options.merge_options(baml_options).parse_response(function_name="JokeTeller", llm_response=llm_response, mode="stream")
         return typing.cast(str, result)
+
+    def RAG(
+        self, llm_response: str, baml_options: BamlCallOptions = {},
+    ) -> stream_types.Response:
+        result = self.__options.merge_options(baml_options).parse_response(function_name="RAG", llm_response=llm_response, mode="stream")
+        return typing.cast(stream_types.Response, result)
 
     def SampleInput(
         self, llm_response: str, baml_options: BamlCallOptions = {},

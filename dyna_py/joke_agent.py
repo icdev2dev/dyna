@@ -1,7 +1,5 @@
-import asyncio
-from typing import Optional, Dict, Any
+from typing import Optional
 
-from baml_test2 import  tell_a_joke_v2
 from baml_client.async_client import b
 from baml_client.types import StepFrameIn, StepFrameOut
 
@@ -46,15 +44,10 @@ class JokeAgent(PauseMixin, InterruptMixin, LoopingAgentBase):
         }
 
     async def apply_guidance(self, g) -> Optional[dict]:
-        # g may be a dict (preferred) or contain {"_raw_text": "..."} if free-form
-        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
-        print(g)        
-        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
         
         try:
             if isinstance(g, dict) and "subject" in g:
                 self.current_subject = str(g["subject"])
-                print(f"JokeAgent {self.agent_id}: now telling jokes about {self.current_subject}")
                 return {"subject": self.current_subject}
             # Simple heuristic if free-form text is provided and no interpreter
             if isinstance(g, dict) and "_raw_text" in g:
@@ -64,30 +57,17 @@ class JokeAgent(PauseMixin, InterruptMixin, LoopingAgentBase):
                 m = re.search(r"(?:subject\s*:\s*|about\s+)([A-Za-z0-9 _-]{2,})", str(raw), re.IGNORECASE)
                 if m:
                     self.current_subject = m.group(1).strip()
-                    print(f"JokeAgent {self.agent_id}: now telling jokes about {self.current_subject}")
                     return {"subject": self.current_subject}
         except Exception:
             pass
         return None
 
     async def do_tick(self, step: int) -> StepOutcome:
-        # Call your BAML function; it returns an object with .text
-        print("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++")
 
-
-
-
-#        async def tell_a_joke_v2(subject="foot", guidance="") -> StepFrameOut:
         in_arg = StepFrameIn(context=self.current_subject, guidance="")
         joke =  await b.TellAJokeV2(in_arg=in_arg)
 
-
-
-
-#        joke = await tell_a_joke_v2(self.current_subject)
         text = getattr(joke, "text", None) or str(joke)
-
-        print(f"[Agent {self.agent_id}] Joke: {text} ENTIRE THING : {joke}")
 
         # Provide agent state for storage; include paused for transparency
         state = {"subject": self.current_subject, "paused": self._paused_flag()}
@@ -97,3 +77,4 @@ class JokeAgent(PauseMixin, InterruptMixin, LoopingAgentBase):
             text=text,
             state=state,
         )
+    

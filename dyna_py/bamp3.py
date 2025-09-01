@@ -1,11 +1,15 @@
-from baml_client.async_client import b
-from baml_client.types import MonikerStepFrameIn, MonikerStepFrameOut, MonikerGuidance, MonikerState
+from baml_client import b
 
-
-async def tell_a_joke(subject="foot") -> str:
-    initial_state = MonikerState()
-    guidance = MonikerGuidance(topic="dogs")
-    a = MonikerStepFrameIn(step="0", state=initial_state,guidance=guidance)
-    joke_text = f"tell a joke about john on the subject of {subject}"
-    return await  b.TellAJoke(a, joke_text)
-
+print (b.RAG("how to configure s3", ''' 
+             # background 
+             - the customer is interested in setting up s3 for lambda use
+             # Use Cases
+             ## how to setup  s3 (general  case)
+             - login to console
+             - look at s3
+             ## how to setup s3 for AWS Lambda
+             - ensure that you have a lambda function
+             - configure s3 to trust s3
+             # how to setup ec2
+             - this is hard
+             '''))

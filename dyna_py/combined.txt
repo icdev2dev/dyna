@@ -1,3 +1,95 @@
+=== ../dyna/src/LiveRunWindow.svelte ===
+<script> 
+    import WindowFrame from './WindowFrame.svelte'; 
+    import { onMount, onDestroy } from 'svelte'; 
+
+    import { io } from 'socket.io-client'; 
+
+    let { 
+        id, 
+        title = 'Last Updated', 
+        run = { agent_id: '', session_id: '' }, 
+        position = $bindable({ x: 100, y: 100 }), 
+        size = $bindable({ w: 420, h: 240 }),
+        z = 1, 
+        persist = 'keep', onFocus: onFocusCb, onRequestClose: onRequestCloseCb 
+    } = $props(); 
+    
+
+    let lastText = $state('');
+    let ts = $state(null);
+    let error = $state(null);
+    //let lastText = ''; 
+    //let ts = null; 
+    let socket = null; 
+    //let error = null; 
+    const runKey = () => `${run?.agent_id ?? ''}::${run?.session_id ?? ''}`; 
+    onMount(() => { 
+        try { 
+            // Adjust URL/origin if your API is on another host/port
+            // socket = io(window.location.origin, { transports: ['websocket', 'polling'], withCredentials: false, }); 
+          socket = io('http://localhost:5000', { transports: ['websocket', 'polling'], withCredentials: false});
+
+            socket.on('connect', () => { socket.emit('subscribe_run', { run_id: runKey() }); }); 
+            socket.on('run_update', (data) => { 
+                console.log("IN RUN UPDATE: " + data + data.last_text + " " + data.run_id + runKey())
+                if (!data || data.run_id !== runKey()) return; 
+                if (data.last_text != null) lastText = data.last_text; 
+                ts = data.timestamp ?? Date.now(); 
+            }); 
+            socket.on('connect_error', (e) => { error = `Socket connect error: ${e?.message || e}`; }); 
+            socket.on('error', (e) => { error = `Socket error: ${e?.message || e}`; }); } catch (e) { error = String(e); } 
+    }); 
+    onDestroy(() => { 
+        try { 
+            socket?.emit?.('unsubscribe_run', { run_id: runKey() }); socket?.close?.(); 
+        } catch {} 
+    }); 
+
+    function fmtDate() { 
+        if (!ts) return ''; try { return new Date(ts).toLocaleString(); } catch { return String(ts); } 
+    } 
+    function requestCloseLocal() { onRequestCloseCb?.({ id }); } 
+</script>
+
+
+<WindowFrame
+  id={id}
+  title={title}
+  bind:position
+  bind:size
+  z={z}
+  onFocus={onFocusCb}
+  onRequestClose={requestCloseLocal}
+>
+  {#if error}
+    <div class="err">Error: {error}</div>
+  {/if}
+
+  <div class="live-run-root">
+    <div class="last-updated">
+      <strong>Last updated:</strong> {fmtDate()}
+    </div>
+    <pre class="mono box">{lastText ?? ''}</pre>
+  </div>
+</WindowFrame>
+
+<style>
+  .live-run-root { display: grid; grid-template-rows: auto 1fr; height: 100%; gap: 8px; }
+  .last-updated { font-size: 0.9rem; color: #374151; }
+  .mono.box {
+    white-space: pre-wrap;
+    word-break: break-word;
+    padding: 10px;
+    border-radius: 8px;
+    background: #0b1020;
+    color: #d1e7ff;
+    min-height: 120px;
+  }
+  .err { color: #b91c1c; }
+</style>
+
+
 === ../dyna/src/InputField.svelte ===
 <script>
   export let label = "";
@@ -283,6 +375,81 @@
             return id;
         }
 
+        if (config.kind === 'agentsList') {
+            const win = {
+                id,
+                kind: 'agentsList',
+                title: config.title ?? 'Agent List',
+                value: config.value ?? { entities: [] },
+                position: pos,
+                size,
+                z: ++zCounter,
+                persist
+                };
+
+            windows = [...windows, win];
+            return id;
+        }
+
+        if (config.kind === 'orderEditor') {
+            const win = {
+                id,
+                kind: 'orderEditor',
+                title: config.title ?? 'Order Editor',
+                value: config.value ?? { entities: [] },
+                position: pos,
+                size,
+                z: ++zCounter,
+                persist
+                };
+
+            windows = [...windows, win];
+            return id;
+        }
+
+         if (config.kind === 'agentRuns') { 
+            const win = { 
+                id, 
+                kind: 'agentRuns', 
+                title: config.title ?? 'Agent Runs', 
+                filters: (config.filters && typeof config.filters === 'object') ? config.filters : { agent_id: '', status: '', q: '' }, 
+                position: pos, 
+                size, 
+                z: ++zCounter, 
+                persist 
+            }; 
+            windows = [...windows, win]; 
+            return id; 
+        } 
+
+
+
+        if (config.kind === 'runDetail') {
+            const win = {
+                id,
+                kind: 'runDetail',
+                title: config.title ?? 'Last Updated',
+                run: {
+                    agent_id: String(config.run?.agent_id || ''),
+                    session_id: String(config.run?.session_id || '')
+                },
+                position: pos,
+                size,
+                z: ++zCounter,
+                persist
+            };
+            windows = [...windows, win];
+            return id;
+        }
+
+
+
+
+
+
+
+
+
 
         // NEW: plugin branch
         if (config.kind === 'plugin') {
@@ -422,15 +589,75 @@
             promptText = ''; 
         } 
     }
+
+
+
+
+
+
+
+function handleShowAgentRuns(e) { 
+    const agent_id = e?.detail?.agent_id; 
+    if (!agent_id) return; 
+    spawn({ 
+        kind: 'agentRuns', 
+        title: `Runs – ${agent_id}`, 
+        persist: 'keep', 
+        size: { w: 900, h: 520 }, 
+        filters: { agent_id, status: '', q: '' } 
+    }); 
+}
+
+
+
+function handleShowRunDetail(e) {
+const aid = e?.detail?.agent_id;
+const sid = e?.detail?.session_id;
+if (!aid || !sid) return;
+spawn({
+kind: 'runDetail',
+title: `Last Updated — ${sid}`,
+persist: 'keep',
+size: { w: 700, h: 480 },
+run: { agent_id:aid, session_id:sid }
+});
+}
+
+
+
+
+
+$effect(() => {
+if (!windowsLayerEl) return;
+const hRuns = (ev) => handleShowAgentRuns(ev);
+const hDetail = (ev) => handleShowRunDetail(ev);
+windowsLayerEl.addEventListener('showAgentRuns', hRuns);
+windowsLayerEl.addEventListener('showRunDetail', hDetail);
+return () => {
+windowsLayerEl.removeEventListener('showAgentRuns', hRuns);
+windowsLayerEl.removeEventListener('showRunDetail', hDetail);
+};
+});
+
+
+
+
 </script> 
 
 
 <div class="canvas" bind:this={canvasEl}> 
-    <div class="windows" bind:this={windowsLayerEl}>
+    <div class="windows" bind:this={windowsLayerEl} >
         {#each windows as w (w.id)}
             {@const Renderer = WINDOW_RENDERERS[w.kind]} 
             {#if Renderer} 
-                <Renderer w={w} onFocus={onFocus} onRequestClose={onRequestClose} onSubmit={onSubmit} transitions={transitions} /> 
+                <Renderer 
+                    w={w} 
+                    onFocus={onFocus} 
+                    onRequestClose={onRequestClose} 
+                    onSubmit={onSubmit} 
+                    transitions={transitions}
+                    on:showAgentRuns={handleShowAgentRuns} 
+                    /> 
             {:else} 
                 <div class="window-unknown" style={`z-index:${w.z}`}> Unknown window kind: {w.kind} </div> 
             {/if}
@@ -515,6 +742,100 @@
 
 
 
+=== ../dyna/src/RunDetailWindow.svelte ===
+<script> 
+    import WindowFrame from './WindowFrame.svelte'; 
+    let { 
+        id, 
+        title = 'Last Updated', 
+        position = $bindable({ x: 120, y: 120 }), 
+        size = $bindable({ w: 700, h: 480 }), 
+        z = $bindable(1), 
+        persist = 'keep', 
+        // run = { agent_id, session_id } 
+        run = $bindable({ agent_id: '', session_id: '' }), 
+        onFocus: onFocusCb, 
+        onRequestClose: onRequestCloseCb 
+    } = $props(); 
+    let loading = $state(false); 
+    let error = $state(null); 
+    let last = $state({ last_text: '', timestamp: null }); 
+    function requestClose() { onRequestCloseCb?.({ id, isDirty: false, value: null, persist }); } 
+    function fmtDate(d) { if (!d) return ''; try { const dt = new Date(d); if (Number.isNaN(dt.getTime())) return String(d); return dt.toLocaleString(); } catch { return String(d); } } 
+    async function refresh() { 
+        if (!run?.agent_id || !run?.session_id) return; 
+        loading = true; 
+        error = null; 
+        try { 
+            // Placeholder API (backend to implement) 
+            const params = new URLSearchParams({ agent_id: String(run.agent_id), session_id: String(run.session_id) }); 
+            const url = `http://127.0.0.1:5000/api/run-last-updated?${params.toString()}`; 
+            const res = await fetch(url); 
+            if (!res.ok) throw new Error(`HTTP ${res.status}`); 
+            const data = await res.json(); 
+            last = { last_text: data.last_text ?? '', timestamp: data.timestamp ?? null }; 
+        } catch (e) { error = e.message || String(e); } 
+        loading = false; 
+    } 
+        // Auto load when agent/session changes 
+    $effect(() => { if (run?.agent_id && run?.session_id) refresh(); }); 
+</script>
+<WindowFrame
+id={id}
+title={title}
+bind:position
+bind:size
+z={z}
+onFocus={onFocusCb}
+onRequestClose={requestClose}>
+
+{#snippet headerActions()}
+<div style="display:flex; gap:6px;">
+<button class="win-close" type="button" onpointerdown={(e) => e.stopPropagation()} onclick={refresh}>Refresh</button>
+<button class="win-close" type="button" onpointerdown={(e) => e.stopPropagation()} onclick={requestClose} aria-label="Close">×</button>
+</div>
+{/snippet}
+
+{#snippet children()}
+<section class="detail-root">
+<div class="meta">
+<div><strong>Agent ID:</strong> {run.agent_id}</div>
+<div><strong>Session ID:</strong> {run.session_id}</div>
+<div><strong>Last updated:</strong> {fmtDate(last.timestamp)}</div>
+</div>
+
+  {#if loading}
+    <div>Loading…</div>
+  {:else if error}
+    <div class="err">Error: {error}</div>
+  {:else}
+    <div class="content">
+      <label>Last updated text</label>
+      <pre class="mono box">{last.last_text || ''}</pre>
+    </div>
+  {/if}
+</section>
+{/snippet}
+</WindowFrame>
+
+<style> 
+    .detail-root { display: grid; gap: 12px; height: 100%; } 
+    .meta { display: grid; gap: 6px; } 
+    .content { display: grid; gap: 6px; } 
+    label { font-size: 12px; color: #6b7280; } 
+    .mono.box { 
+        background: #0b1020; 
+        color: #d1e7ff; 
+        padding: 10px; 
+        border-radius: 10px; 
+        overflow: auto; 
+        white-space: pre-wrap; 
+        word-break: break-word; 
+    } 
+    .err { color: #b91c1c; } 
+</style>
+
+
 === ../dyna/src/ChatWindow.svelte ===
 <script> 
     import WindowFrame from './WindowFrame.svelte'; 
@@ -562,6 +883,212 @@
         >×</button>
     {/snippet}
 </WindowFrame>
+
+
+=== ../dyna/src/OrderEditorWindow.svelte ===
+<script> 
+    import WindowFrame from './WindowFrame.svelte'; 
+    const sampleVendors = ['Adobe', 'Microsoft', 'Amazon', 'Apple', 'Oracle']; 
+    const sampleProducts = ['3 year commit', 'Acrobat', 'Photoshop', 'Office 365', 'AWS Credits']; 
+    let { 
+        id, 
+        title = 'Order & Rules Editor', 
+        position = $bindable({ x: 80, y: 80 }), 
+        size = $bindable({ w: 960, h: 600 }), 
+        z = $bindable(1), 
+        persist = 'keep', 
+        onFocus: onFocusCb, 
+        onRequestClose: onRequestCloseCb 
+    } = $props(); 
+    
+    // Order state 
+    let order = $state({ vendor: '', products: [], lineItems: [] }); 
+    // Product chips autocomplete 
+    let productInput = $state(''); 
+    let productDropdown = $derived( productInput ? sampleProducts.filter(p => p.toLowerCase().includes(productInput.toLowerCase()) && !order.products.includes(p)) : sampleProducts.filter(p => !order.products.includes(p)) ); 
+    // Line items 
+    function addLineItem() { order.lineItems = [...order.lineItems, { product: '', quantity: 1, price: 0 }]; } 
+    function removeLineItem(idx) { order.lineItems = order.lineItems.filter((_, i) => i !== idx); } 
+    function updateLineItem(idx, key, value) { order.lineItems[idx][key] = value; order = { ...order }; } 
+    function lineItemTotal(item) { return (Number(item.quantity) || 0) * (Number(item.price) || 0); } 
+    function orderTotal() { return order.lineItems.reduce((s, i) => s + lineItemTotal(i), 0); } 
+    // Products multiselect 
+    function addProductChip(p) { if (!order.products.includes(p)) { order.products = [...order.products, p]; productInput = ''; } } 
+    function removeProductChip(p) { order.products = order.products.filter(prod => prod !== p); } 
+    // Rules state 
+    let rules = $state([]); 
+    let newRuleInput = $state(''); 
+    // Rules actions 
+    function addRule() { const val = newRuleInput.trim(); if (!val) return; rules = [ ...rules, { description: val, user: 'milind', created: new Date().toLocaleDateString(), expanded: false, stub: null } ]; newRuleInput = ''; } 
+    function removeRule(idx) { rules = rules.filter((_, i) => i !== idx); } 
+    function toggleRuleExpand(idx) { rules[idx].expanded = !rules[idx].expanded; rules = [...rules]; } 
+    function moveRule(idx, dir) { const j = idx + dir; if (j < 0 || j >= rules.length) return; const next = [...rules]; [next[idx], next[j]] = [next[j], next[idx]]; rules = next; } 
+    // Check rules (stub) 
+    function checkRules() { rules = rules.map(rule => { if (/adobe.*3 year commit/i.test(rule.description)) { if ( order.vendor?.toLowerCase() === 'adobe' && order.products?.map((p) => p.toLowerCase()).includes('3 year commit') ) { if (orderTotal() < 1000) return { ...rule, stub: 'fail' }; return { ...rule, stub: 'pass' }; } return { ...rule, stub: null }; } return { ...rule, stub: null }; }); } 
+</script>
+
+
+<WindowFrame
+{id}
+{title}
+bind:position
+bind:size
+{z}
+onFocus={onFocusCb}
+onRequestClose={() => onRequestCloseCb?.({ id, isDirty: false, value: order, persist })}
+>
+{#snippet children()}
+<main class="order-editor-root">
+<!-- LEFT: Order -->
+<section class="order-section">
+<div class="form-header">Edit Order</div>
+
+    <div class="form-grid">
+      <div class="form-group">
+        <label for="vendor">Vendor</label>
+
+
+        <input list="vendors" id="vendor" placeholder="Select vendor" bind:value={order.vendor} class="input-lg" />
+        
+        <datalist id="vendors">
+          {#each sampleVendors as v}
+            <option value={v}></option>
+          {/each}
+        </datalist>
+      </div>
+
+      <div class="form-group span-2">
+        <label>Products</label>
+        <div class="prod-chips">
+          {#each order.products as p}
+            <div class="chip">
+              {p}
+              <button type="button" class="chip-del" onclick={() => removeProductChip(p)} aria-label="Remove">&times;</button>
+            </div>
+          {/each}
+
+          <input type="text" placeholder="Add product" bind:value={productInput} onkeydown={e => { if (e.key === 'Enter' && productInput.trim()) addProductChip(productInput.trim()); }} class="chip-input" />
+
+          
+          {#if productDropdown.length && productInput}
+            <div class="prod-dropdown">
+              {#each productDropdown as prod}
+                <div class="prod-opt" onclick={() => addProductChip(prod)}>{prod}</div>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      </div>
+    </div>
+
+    <div class="form-header" style="margin-top: 18px;">Order Line Items</div>
+    <table class="order-line-table">
+      <thead>
+        <tr>
+          <th>Product</th>
+          <th class="qty">Qty</th>
+          <th class="price">Price</th>
+          <th class="subtotal">Subtotal</th>
+          <th>
+            <button class="line-add" type="button" onclick={addLineItem} title="Add">＋</button>
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {#each order.lineItems as item, idx}
+          <tr>
+            <td>
+                <input list="products" bind:value={item.product} placeholder="Product" class="prod-cell" />
+              
+              <datalist id="products">
+                {#each sampleProducts as p}
+                  <option value={p}></option>
+                {/each}
+              </datalist>
+            </td>
+            <td>
+                <input type="number" min="1" step="1" bind:value={item.quantity} class="num-cell" />
+              
+            </td>
+            <td>
+
+                <input type="number" min="0" step="0.01" bind:value={item.price} class="num-cell" />
+
+              
+            </td>
+            <td class="subtotal">${lineItemTotal(item).toFixed(2)}</td>
+            <td>
+              <button class="line-del" type="button" onclick={() => removeLineItem(idx)} title="Remove">&times;</button>
+            </td>
+          </tr>
+        {/each}
+      </tbody>
+      <tfoot>
+        <tr class="total-row">
+          <td colspan="3" style="border: none; text-align:right; font-weight:600;">Total:</td>
+          <td class="subtotal" style="font-weight:700">${orderTotal().toFixed(2)}</td>
+          <td style="border: none;"></td>
+        </tr>
+      </tfoot>
+    </table>
+  </section>
+
+  <!-- RIGHT: Rules -->
+  <section class="rules-section">
+    <div class="rules-header">
+      <span>Rules</span>
+      <button type="button" class="check-btn" onclick={checkRules} title="Check rules">Check Rules</button>
+    </div>
+
+    <div class="rule-add">
+        <input type="text" placeholder="Write a rule..." bind:value={newRuleInput} onkeydown={e => { if (e.key === 'Enter') addRule(); }} />
+
+     
+      <button type="button" class="add-btn" onclick={addRule}>Add Rule</button>
+    </div>
+
+    <div class="rules-list">
+      {#if rules.length === 0}
+        <div class="no-rules">No rules yet. Add your first rule above.</div>
+      {/if}
+
+      {#each rules as rule, idx}
+        <div class="rule-card {rule.stub === 'fail' ? 'fail' : rule.stub === 'pass' ? 'pass' : ''}">
+          <div class="rule-card-main" onclick={() => toggleRuleExpand(idx)}>
+            <span class="rule-controls">
+              <button class="icon-btn" title="Move up" disabled={idx === 0} onclick={e => { e.stopPropagation(); moveRule(idx, -1); }}>↑</button>
+              <button class="icon-btn" title="Move down" disabled={idx === rules.length - 1} onclick={e => { e.stopPropagation(); moveRule(idx, 1); }}>↓</button>
+            </span>
+
+            <span class="rule-desc">{rule.description}</span>
+
+            {#if rule.stub === 'pass'}
+              <span class="stub pass-stub" title="Rule passes">✓</span>
+            {:else if rule.stub === 'fail'}
+              <span class="stub fail-stub" title="Rule fails">✗</span>
+            {:else}
+              <span class="stub neutral-stub" title="Not evaluated">•</span>
+            {/if}
+
+            <button class="icon-btn danger" title="Delete rule" onclick={e => { e.stopPropagation(); removeRule(idx); }}>&times;</button>
+          </div>
+
+          {#if rule.expanded}
+            <div class="rule-details">
+              <div><strong>Created by:</strong> {rule.user}</div>
+              <div><strong>Created:</strong> {rule.created}</div>
+              <div class="hint">This area can show parsed rule details, parameters, and any LLM interpretation.</div>
+            </div>
+          {/if}
+        </div>
+      {/each}
+    </div>
+  </section>
+</main> 
+{/snippet}
+</WindowFrame>
+
+<style> /* Root layout inside window */ .order-editor-root { display: grid; grid-template-columns: 1.4fr 1fr; gap: 14px; height: 100%; background: linear-gradient(180deg, #f8fbff 0%, #f5f7fb 100%); padding: 8px; } /* Left panel */ .order-section { display: grid; grid-template-rows: auto auto 1fr; gap: 12px; padding: 12px; border: 1px solid #e5e7eb; border-radius: 12px; background: #fff; overflow: auto; } /* Right panel */ .rules-section { display: grid; grid-template-rows: auto auto 1fr; gap: 12px; padding: 12px; border: 1px solid #e5e7eb; border-radius: 12px; background: #fff; overflow: auto; } /* Headers */ .form-header { font-weight: 700; color: #0f172a; font-size: 1rem; } .rules-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 700; color: #0f172a; font-size: 1rem; } /* Grid for top form rows */ .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; } .form-group { display: grid; gap: 6px; } .form-group.label-right > label { justify-self: end; } .form-group.span-2 { grid-column: span 2; } /* Inputs */ .input-lg, .prod-cell, .num-cell, .rule-add input { width: 100%; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 10px; background: #fff; outline: none; transition: border-color 120ms, box-shadow 120ms; } .input-lg:focus, .prod-cell:focus, .num-cell:focus, .rule-add input:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.16); } /* Product chips */ .prod-chips { position: relative; display: flex; flex-wrap: wrap; gap: 8px; padding: 8px; border: 1px dashed #d1d5db; border-radius: 10px; background: #fbfdff; } .chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; background: #eef3ff; color: #1e3a8a; border: 1px solid #d7e2ff; border-radius: 999px; font-weight: 600; font-size: 0.9rem; } .chip-del { border: none; background: transparent; color: #1e3a8a; cursor: pointer; font-size: 1rem; } .chip-input { min-width: 160px; border: none; outline: none; padding: 6px 8px; background: transparent; } .prod-dropdown { position: absolute; left: 8px; right: 8px; top: 100%; margin-top: 6px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; box-shadow: 0 8px 18px rgba(0,0,0,0.08); z-index: 10; max-height: 180px; overflow: auto; } .prod-opt { padding: 8px 10px; cursor: pointer; } .prod-opt:hover { background: #f1f5ff; } /* Line items table */ .order-line-table { width: 100%; border-collapse: separate; border-spacing: 0; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; background: #fff; } .order-line-table th, .order-line-table td { border-bottom: 1px solid #eef0f3; padding: 8px 10px; vertical-align: middle; } .order-line-table thead th { background: #f6f9ff; font-weight: 700; color: #0f172a; } .order-line-table .qty { width: 90px; } .order-line-table .price { width: 120px; } .order-line-table .subtotal { width: 120px; text-align: right; } .line-add, .line-del { border: 1px solid #d1d5db; background: #fff; border-radius: 8px; padding: 4px 8px; cursor: pointer; } .line-del { color: #b91c1c; } .line-add:hover, .line-del:hover { background: #f1f5ff; } .total-row td { background: #f9fbff; } /* Rules area */ .rule-add { display: grid; grid-template-columns: 1fr auto; gap: 8px; } .add-btn, .check-btn { padding: 8px 12px; border-radius: 10px; border: 1px solid #1d4ed8; background: #2563eb; color: #fff; font-weight: 700; cursor: pointer; } .add-btn:hover, .check-btn:hover { filter: brightness(1.05); } .rules-list { display: grid; gap: 10px; overflow: auto; } .no-rules { padding: 10px; color: #64748b; border: 1px dashed #cbd5e1; border-radius: 10px; background: #f8fafc; } /* Rule card */ .rule-card { border: 1px solid #e5e7eb; border-radius: 12px; background: #ffffff; box-shadow: 0 3px 12px rgba(0,0,0,0.04); } .rule-card.pass { border-color: #8dd99d; box-shadow: 0 4px 12px rgba(13,148,136,0.12); } .rule-card.fail { border-color: #f2a7a7; box-shadow: 0 4px 12px rgba(185,28,28,0.12); } .rule-card-main { display: grid; grid-template-columns: auto 1fr auto auto; gap: 10px; align-items: center; padding: 10px 12px; cursor: pointer; } .rule-controls { display: flex; gap: 6px; } .icon-btn { border: 1px solid #d1d5db; background: #fff; border-radius: 8px; padding: 4px 8px; cursor: pointer; } .icon-btn:disabled { opacity: 0.5; cursor: not-allowed; } .icon-btn.danger { color: #b91c1c; } .rule-desc { color: #0f172a; font-weight: 600; } .stub { font-weight: 800; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 999px; border: 1px solid #d1d5db; background: #fff; } .pass-stub { color: #0f766e; border-color: #0f766e; } .fail-stub { color: #b91c1c; border-color: #b91c1c; } .neutral-stub { color: #64748b; border-color: #cbd5e1; } .rule-details { border-top: 1px solid #eef0f3; padding: 10px 12px; background: #fbfdff; color: #334155; font-size: 0.95rem; } .rule-details .hint { margin-top: 6px; font-size: 0.9rem; color: #64748b; } </style>
 
 
 === ../dyna/src/ChatPanel.svelte ===
@@ -705,6 +1232,273 @@
 </style>
 
 
+=== ../dyna/src/AgentsListWindow.svelte ===
+<script>
+  import WindowFrame from './WindowFrame.svelte'; 
+  import AgentLaunchModal from './AgentLaunchModal.svelte'; 
+  let { 
+    id, 
+    title = 'Agent Configurations', 
+    position = $bindable({ x: 100, y: 100 }), 
+    size = $bindable({ w: 600, h: 400 }), 
+    z = $bindable(1), 
+    persist = 'keep', 
+    onFocus: onFocusCb, 
+    onRequestClose: onRequestCloseCb 
+  } = $props(); 
+  let loading = $state(true); 
+  let error = $state(null); 
+  let agentConfigs = $state([]); 
+  let selected = $state({}); 
+  // Popover 
+  let menuOpen = $state(false); 
+  let menuX = $state(0), menuY = $state(0); 
+  let menuAgent = $state(null); 
+  // Launch modal 
+  let launchOpen = $state(false); 
+  let launchBusy = $state(false); 
+  let launchErr = $state(null); 
+  let launchAgentId = $state(''); 
+  // A DOM node inside the window to dispatch custom events (for Canvas) 
+  let rootEl = null; 
+  function toggleSelect(agent_id, checked) { 
+    selected = { ...selected, [agent_id]: checked }; 
+  } 
+  function selectAllRows(checked) { 
+    selected = Object.fromEntries(agentConfigs.map(a => [a.agent_id, checked])); 
+  } 
+  function anySelected() { 
+    return Object.values(selected).some(Boolean); 
+  } 
+  function selectedIds() { 
+    return Object.entries(selected).filter(([,v]) => v).map(([id]) => id); 
+  } 
+  function refresh() { 
+    loading = true; 
+    error = null; 
+    (async () => { 
+      try { 
+        const res = await fetch('http://127.0.0.1:5000/api/list-agent-configs'); 
+        if (!res.ok) throw new Error(`Server error: ${res.status}`); 
+        agentConfigs = await res.json(); 
+        const ids = new Set(agentConfigs.map(a => a.agent_id)); 
+        selected = Object.fromEntries(Object.entries(selected).filter(([id]) => ids.has(id))); 
+      } catch (e) { error = e.message || String(e); } loading = false; })(); 
+  } 
+  
+  $effect(() => { refresh(); }); 
+  
+  function requestClose() { 
+    onRequestCloseCb?.({ id, isDirty: false, value: null, persist }); 
+  } 
+  function openMenu(evt, agent) { 
+    menuAgent = agent; 
+    menuX = evt.clientX; menuY = evt.clientY;
+    menuOpen = true; 
+  } 
+  function closeMenu() { 
+    menuOpen = false; 
+    menuAgent = null; 
+  } 
+  function openLaunch(agent) { 
+    launchErr = null; 
+    launchAgentId = agent?.agent_id ?? ''; 
+    launchOpen = true; 
+  } 
+  function showProps(agent) { 
+    alert('Agent Properties:\n' + JSON.stringify(agent, null, 2)); 
+  } 
+  function deleteSelected() { 
+    if (!anySelected()) return; 
+    if (!window.confirm(`Delete ${selectedIds().length} selected agent(s)?`)) return; 
+    agentConfigs = agentConfigs.filter(cfg => !selected[cfg.agent_id]);
+    selected = {}; 
+    closeMenu(); 
+  } // Handle OK from modal: call API and, on success, close and show runs 
+  
+  async function handleLaunchConfirm({ agent_id, session_id, prompt, config }) { 
+    launchBusy = true; 
+    launchErr = null; 
+    try { 
+      const res = await fetch('http://127.0.0.1:5000/api/create-agent', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ agent_id, session_id, input: prompt, config }) 
+      });
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`); 
+      launchOpen = false; 
+      // Trigger runs window for this agent via a bubbling DOM CustomEvent 
+      try { 
+        rootEl?.dispatchEvent(new CustomEvent('showAgentRuns', { detail: { agent_id }, bubbles: true, composed: true })); 
+      } catch {} 
+    } 
+    catch (e) { launchErr = e.message || String(e); } 
+    finally { launchBusy = false; } }
+
+</script>
+
+
+<WindowFrame
+{id}
+{title}
+bind:position
+bind:size
+{z}
+onFocus={onFocusCb}
+onRequestClose={requestClose} >
+
+{#snippet children()}
+  <section bind:this={rootEl} style="padding: 18px;">
+    <div class="header-row">
+      <span>Agent Configurations</span>
+      <div>
+        <button
+                type="button"
+                class="delete-btn"
+                disabled={!anySelected()}
+                onclick={deleteSelected}
+                title="Delete selected agents"
+              >
+        🗑️ Delete Selected
+        </button>
+        <button type="button" class="refresh-btn" onclick={refresh} title="Refresh list">⟳ Refresh</button>
+      </div>
+    </div>
+    {#if loading}
+      <div>Loading…</div>
+    {:else if error}
+      <div class="err">{error}</div>
+    {:else}
+      {#if agentConfigs.length}
+        <table class="agent-table">
+        <thead>
+        <tr>
+        
+        <th>ID</th>
+        <th>Type</th>
+        <th>Description</th>
+        </tr>
+        </thead>
+        <tbody>
+        {#each agentConfigs as cfg}
+        <tr onclick={e => openMenu(e, cfg)} tabindex="0" style="cursor:pointer">
+        
+        <td>{cfg.agent_id}</td>
+        <td>{cfg.agent_type}</td>
+        <td>{cfg.agent_description}</td>
+        </tr>
+        {/each}
+        </tbody>
+        </table>
+      {:else}
+        <div>No agent configs found.</div>
+      {/if}
+    {/if}
+  </section>
+{/snippet}
+</WindowFrame>
+
+{#if menuOpen}
+
+  <div 
+    class="popover-menu" 
+    style={`left: ${menuX}px; top: ${menuY}px;`} 
+    onclick={e => e.stopPropagation()} > 
+      <button 
+        class="pmenu-btn" 
+        onclick={() => { openLaunch(menuAgent); closeMenu(); }}>🚀 
+        Launch Agent Run
+      </button> 
+      <button 
+        class="pmenu-btn" 
+        onclick={() => { /* show runs */ rootEl?.dispatchEvent(new CustomEvent('showAgentRuns', { detail: { agent_id: menuAgent.agent_id }, bubbles: true, composed: true })); closeMenu(); }}>📊 
+        Show Agent Runs
+      </button> 
+      <button class="pmenu-btn" onclick={() => { showProps(menuAgent); closeMenu(); }}>ℹ️ 
+        More Properties
+      </button> 
+    </div> 
+  <div class="backdrop" onclick={closeMenu}></div> 
+{/if}
+
+<AgentLaunchModal
+open={launchOpen}
+agentId={launchAgentId}
+bind:busy={launchBusy}
+submitError={launchErr}
+onConfirm={handleLaunchConfirm}
+onCancel={() => (launchOpen = false)}
+/>
+
+
+
+<style>
+.header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 10px;
+  font-weight: bold;
+  font-size: 1.1em;
+  gap: 12px;
+}
+.refresh-btn {
+  background: #1e90ff;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 1em;
+  margin-left: 8px;
+}
+.refresh-btn:hover { filter: brightness(1.1); }
+.delete-btn {
+  background: #e04038;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 1em;
+}
+.delete-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.agent-table { border-collapse: collapse; width: 100%; margin-top: 12px; }
+.agent-table th, .agent-table td { border: 1px solid #ccc; padding: 6px 10px; text-align: left; }
+.agent-table th { background: #3482d0; color: #fff;}
+.agent-table tr { background: #629749; }
+.agent-table tr:hover { background: #236a15; }
+.agent-table th input[type="checkbox"] { width: 1em; height: 1em; accent-color: #236a15;}
+.agent-table td input[type="checkbox"] { width: 1em; height: 1em; accent-color: #3482d0;}
+
+.err { color: #b91c1c; }
+
+.popover-menu {
+  position: fixed;
+  z-index: 1000;
+  background: #938ae7;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  padding: 6px 0;
+  min-width: 180px;
+  font-size: 1em;
+}
+.pmenu-btn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none; background: none; padding: 8px 18px; cursor: pointer;
+}
+.pmenu-btn:hover { background: #2957b3; }
+.backdrop {
+  position: fixed; inset: 0;
+  background: transparent;
+  z-index: 999;
+}
+</style>
+
 === ../dyna/src/schema.js ===
 export default {
   type: "form",
@@ -753,7 +1547,7 @@ export default {
 
     function sanitizeSpawnConfig(cfg) {
         if (!cfg || typeof cfg !== 'object') return null
-        let kind = ['form', 'metadata', 'chat'].includes(cfg.kind) ? cfg.kind : 'form'
+        let kind = ['form', 'metadata', 'chat', 'agentsList'].includes(cfg.kind) ? cfg.kind : 'form'
         const out = {
         kind,
         title: String(cfg.title || (kind === 'metadata' ? 'Metadata Editor' : kind === 'chat' ? 'Chat' : 'Form')),
@@ -816,7 +1610,7 @@ export default {
 </script> 
 
 
-
+<!--
 <div class="toolbar"> 
     <button type="button" 
         onclick={() => controller?.spawn({ 
@@ -828,7 +1622,40 @@ export default {
                             size: { w: 420, h: 260 }, 
                             position: { x: 80, y: 80 } 
                         }) 
-                        } > Open Hello Plugin </button> </div>
+                        } > Open Hello Plugin </button> 
+
+        <button type="button" onclick={() =>
+        controller?.spawn({
+            kind: 'agentsList',
+            title: 'Available Agents',
+            persist: 'keep',
+            size: { w: 740, h: 420 },
+            position: { x: 120, y: 120 }
+        })}
+        >
+
+        Available Agents
+        </button>
+
+
+
+        <button
+            type="button"
+            onclick={() =>
+                controller?.spawn({
+                    kind: 'agentRuns',
+                    title: 'Agent Runs',
+                    persist: 'keep',
+                    size: { w: 900, h: 520 },
+                    position: { x: 160, y: 120 },
+                    filters: { agent_id: '', status: '', q: '' }
+                })
+            } 
+        >
+            List Agent Runs
+        </button> 
+</div>
+-->
 
 <div class="app"> 
     <div class="toolbar"> 
@@ -1337,6 +2164,111 @@ export default app
 </WindowFrame>
 
 
+=== ../dyna/src/AgentLaunchModal.svelte ===
+<script> 
+    let { 
+        open = $bindable(false), 
+        agentId = '', 
+        busy = $bindable(false), 
+        submitError = $bindable(null), 
+        onConfirm: onConfirmCb, onCancel: onCancelCb 
+    } = $props(); 
+    let form = $state({ session_id: '', prompt: '', config_json: '{\n}' }); 
+
+
+    let localErr = $state(null); 
+    // Reset inputs each time we open for a different agent 
+    $effect(() => { if (open) { localErr = null; form = { session_id: '', prompt: '', config_json: '{\n}' }; } }); 
+    function confirm() { 
+        localErr = null; 
+        let cfg = {}; 
+        try { 
+            cfg = form.config_json ? JSON.parse(form.config_json) : {}; 
+        } catch { 
+            localErr = 'Config must be valid JSON'; return; 
+        } 
+        onConfirmCb?.({ agent_id: agentId, session_id: form.session_id || undefined, prompt: form.prompt || undefined, config: cfg }); 
+    } 
+    function cancel() { if (busy) return; onCancelCb?.(); } 
+</script>
+
+{#if open}
+
+    <div class="modal-backdrop" onclick={(e) => { if (e.target === e.currentTarget) cancel(); }}> <div class="modal" role="dialog" aria-modal="true" aria-label="Launch Agent" onkeydown={onKey} tabindex="0"> <header class="modal-header"> <div class="title">Launch Agent</div> </header>
+    <section class="modal-body">
+        <div class="field">
+        <label class="lbl">Agent ID</label>
+        <input type="text" value={agentId} readonly class="input readonly" />
+        </div>
+
+        <div class="field">
+        <label class="lbl">Prompt / Input</label>
+        <textarea
+            rows="4"
+            placeholder="Enter initial input for the agent"
+            bind:value={form.prompt}
+            class="input"
+        ></textarea>
+        <div class="hint">Tip: press Ctrl/⌘ + Enter to launch quickly</div>
+        </div>
+
+        {#if localErr}
+        <div class="alert err">{localErr}</div>
+        {/if}
+        {#if submitError}
+        <div class="alert err">{submitError}</div>
+        {/if}
+    </section>
+
+    <footer class="modal-actions">
+        <button type="button" class="btn secondary" onclick={cancel} disabled={busy}>Cancel</button>
+        <button type="button" class="btn primary" onclick={confirm} disabled={busy}>
+        {busy ? 'Launching…' : 'OK'}
+        </button>
+    </footer>
+    </div>
+    </div> 
+{/if}
+
+
+ <style> 
+ /* Theme hooks (uses Canvas/WindowFrame accent if present) */ 
+ :root { 
+    --accent: var(--fi-accent, #2563eb); 
+    --text: #0f172a; 
+    --muted: #64748b; 
+    --border: #e5e7eb; 
+    --subtle: #f8fafc; 
+    --radius: 12px; 
+} 
+.modal-backdrop { 
+    position: fixed; 
+    inset: 0; 
+    background: rgba(15, 23, 42, 0.35); 
+    backdrop-filter: blur(4px); display: grid; place-items: center; 
+    z-index: 2000; 
+    padding: 16px; 
+} 
+.modal { 
+    width: min(560px, 92vw); 
+    max-height: calc(100vh - 32px); 
+    display: grid; 
+    grid-template-rows: auto 1fr auto; 
+    background: #fff; 
+    border: 1px solid var(--border); 
+    border-radius: var(--radius); 
+    box-shadow: 0 18px 48px rgba(0,0,0,0.22); 
+    overflow: hidden; 
+    /* keep header/footer pinned */ 
+    color: var(--text); 
+} 
+.modal-header { 
+    padding: 14px 16px; 
+    background: linear-gradient(180deg, color-mix(in oklab, var(--accent) 96%, #fff 0%), var(--accent)); 
+    color: #fff; 
+    border-bottom: 1px solid color-mix(in oklab, var(--accent) 20%, #000 0%); } .modal-header .title { font-weight: 800; letter-spacing: 0.2px; } .modal-body { padding: 14px 16px; display: grid; gap: 14px; overflow-y: auto; /* vertical scroll only when needed */ overflow-x: hidden; /* avoid horizontal scrollbar strip */ background: #fff; } .field { display: grid; gap: 6px; } .lbl { font-size: 12px; font-weight: 700; color: #334155; letter-spacing: 0.02em; } .hint { font-size: 12px; color: var(--muted); margin-top: 2px; } .input { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: #fff; /* clean surface */ color: var(--text); outline: none; transition: border-color 120ms, box-shadow 120ms, background-color 120ms; box-shadow: inset 0 1px 0 rgba(0,0,0,0.03); } .input::placeholder { color: #9ca3af; } .input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 24%, #fff 0%); } .input.readonly { background: #f9fafb; color: #475569; } textarea.input { resize: vertical; /* allow height resize; no unexpected scrollbars */ min-height: 82px; } .modal-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 12px 16px; border-top: 1px solid var(--border); background: #fafafa; } .btn { padding: 9px 14px; border-radius: 10px; font-weight: 700; cursor: pointer; border: 1px solid #cbd5e1; background: #fff; color: var(--text); transition: filter 120ms ease, transform 80ms ease, box-shadow 120ms ease, background 120ms ease, border-color 120ms ease; } .btn:hover { background: #f8fafc; } .btn:active { transform: translateY(1px); } .btn:disabled { opacity: 0.7; cursor: not-allowed; } .btn.primary { border-color: color-mix(in oklab, var(--accent) 80%, #1d4ed8); background: var(--accent); color: #fff; box-shadow: 0 2px 8px color-mix(in oklab, var(--accent) 30%, #000 0%); } .btn.primary:hover { filter: brightness(1.05); } .btn.secondary { background: #fff; } .alert.err { color: #7f1d1d; background: #fef2f2; border: 1px solid #fee2e2; padding: 10px 12px; border-radius: 10px; } </style>
+
+
 === ../dyna/src/MetaDataWindow.svelte ===
 <script> 
     import WindowFrame from './WindowFrame.svelte'; 
@@ -1761,6 +2693,599 @@ export default {
 </style>
 
 
+=== ../dyna/src/AgentRunsWindow.svelte ===
+<script> 
+  import WindowFrame from './WindowFrame.svelte'; 
+
+
+
+  import LiveRunWindow from './LiveRunWindow.svelte'; 
+  // ...your existing code... 
+ // Track opened live windows (each one is a LiveRunWindow) 
+  let liveWindows = $state([]); 
+  // [{ id, agent_id, session_id }] 
+  
+  function openLiveRun(run) { 
+    closeMenu(); 
+    console.log(run)
+    if (!run?.agent_id || !run?.session_id) return; 
+    const id = crypto.randomUUID(); 
+    liveWindows = [ ...liveWindows, { id, agent_id: run.agent_id, session_id: run.session_id } ]; 
+  } 
+  function closeLiveRun(id) { 
+    liveWindows = liveWindows.filter(w => w.id !== id); 
+  } 
+  // Replace the old "viewLastUpdated" to open live window instead function viewLastUpdated(run) { openLiveRun(run); }
+
+
+  let { 
+    id, 
+    title = 'Agent Runs', 
+    position = $bindable({ x: 140, y: 120 }), 
+    size = $bindable({ w: 900, h: 520 }), 
+    z = $bindable(1), persist = 'keep', 
+    onFocus: onFocusCb, onRequestClose: onRequestCloseCb, 
+    // optional initial filters 
+    filters = $bindable({ agent_id: '', status: '', q: '' }) 
+  } = $props(); 
+  let loading = $state(false); 
+  let error = $state(null); 
+  let runs = $state([]); 
+  let sortBy = $state('created_at'); 
+  let sortDir = $state('desc'); 
+  // 'asc' | 'desc' 
+  let expanded = $state(null); 
+  // run id to show JSON details 
+  // New: row action menu state 
+  let menuOpen = $state(false); 
+  let menuX = $state(0), menuY = $state(0); 
+  let menuRun = $state(null); 
+  // New: interrupt guidance modal 
+  let interruptOpen = $state(false); 
+  let guidanceText = $state(''); 
+  let interruptBusy = $state(false); 
+  let interruptError = $state(null); 
+  function requestClose() { onRequestCloseCb?.({ id, isDirty: false, value: null, persist }); } 
+  function fmtDate(d) { if (!d) return ''; try { const dt = typeof d === 'string' || typeof d === 'number' ? new Date(d) : d; if (Number.isNaN(dt.getTime())) return String(d); return dt.toLocaleString(); } catch { return String(d); } } 
+  function calcDurationMs(start, end) { const s = start ? new Date(start).getTime() : NaN; const e = end ? new Date(end).getTime() : NaN; if (!Number.isFinite(s) || !Number.isFinite(e)) return null; return Math.max(0, e - s); } 
+  function fmtDuration(ms) { if (ms == null) return ''; const sec = Math.floor(ms / 1000); const h = Math.floor(sec / 3600); const m = Math.floor((sec % 3600) / 60); const s = sec % 60; if (h) return `${h}h ${m}m ${s}s`; if (m) return `${m}m ${s}s`; return `${s}s`; } 
+  function toInt(v, fallback = null) { const n = Number(v); return Number.isFinite(n) ? Math.trunc(n) : fallback; } 
+  function ensureJSONString(v) { if (v == null) return null; if (typeof v === 'string') return v; try { return JSON.stringify(v); } catch { return String(v); } } 
+  // Fix: define id and also capture a "last_text" preview for the menu 
+  function normalizeRun(r) { const id = r.id ?? r.run_id ?? r.runId ?? r.session_id ?? ''; const agent_id = r.agent_id ?? r.agentId ?? ''; const created_at = r.created_at ?? r.last_updated ?? r.started_at ?? r.start_time ?? r.started ?? r.startTime ?? r.timestamp ?? null; const session_id = r.session_id ?? r.sessionId ?? null; const iteration = toInt(r.iteration, 0); const status = r.status ?? r.step_status ?? r.result_status ?? null; const last_text = r.text ?? r.message ?? r.output ?? null; let latency_ms = toInt(r.latency_ms, null); const finished_raw = r.finished_at ?? r.end_time ?? r.ended ?? r.endTime ?? r.completed_at ?? null; if (latency_ms == null && created_at && finished_raw) { const s = new Date(created_at).getTime(); const e = new Date(finished_raw).getTime(); if (Number.isFinite(s) && Number.isFinite(e)) latency_ms = Math.max(0, e - s); } const error = r.error ?? r.err ?? null; const run_id = id; const started_at = created_at ?? null; const finished_at = finished_raw; const duration_ms = latency_ms != null ? latency_ms : 0; return { ...r, id, agent_id, session_id, created_at, iteration, status, latency_ms, error, last_text, run_id, started_at, finished_at, duration_ms }; } 
+  async function refresh() { 
+    loading = true; error = null; 
+    try { 
+      const params = new URLSearchParams(); 
+      if (filters.agent_id) params.set('agent_id', filters.agent_id); 
+      if (filters.status) params.set('status', filters.status); 
+      if (filters.q) params.set('q', filters.q); 
+      const url = 'http://127.0.0.1:5000/api/list-sessions-for-agent' + (params.toString() ? `?${params.toString()}` : ''); 
+      const res = await fetch(url); 
+      if (!res.ok) throw new Error(`Server error: ${res.status}`); 
+      const data = await res.json(); 
+      runs = Array.isArray(data) ? data.map(normalizeRun) : []; sortNow(); 
+    } catch (e) { error = e.message || String(e); } loading = false; } 
+    function sortNow() { 
+      const dir = sortDir === 'asc' ? 1 : -1; 
+      const key = sortBy; 
+      const sorted = [...runs].sort((a, b) => { 
+        const va = a[key]; 
+        const vb = b[key]; 
+        if (va == null && vb == null) return 0; 
+        if (va == null) return 1; 
+        if (vb == null) return -1; 
+        if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir; 
+        const sa = String(va); 
+        const sb = String(vb); 
+        return sa.localeCompare(sb) * dir; 
+      }); 
+      runs = sorted; 
+    } 
+    function setSort(col) { 
+      if (sortBy === col) { 
+        sortDir = sortDir === 'asc' ? 'desc' : 'asc'; 
+      } 
+      else { 
+        sortBy = col; 
+        sortDir = 'desc'; 
+      } 
+      sortNow(); 
+    } 
+    function exportCSV() { 
+      const cols = ['run_id', 'agent_id', 'status', 'started_at', 'finished_at', 'duration_ms']; 
+      const header = cols.join(','); 
+      const lines = runs.map(r => cols.map(c => { const v = r[c]; const s = v == null ? '' : String(v).replace(/"/g, '""'); 
+      return `"${s}"`; }).join(',')); 
+      const blob = new Blob([header + '\n' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' }); 
+      const url = URL.createObjectURL(blob); 
+      const a = document.createElement('a'); 
+      a.href = url; 
+      a.download = 'agent_runs.csv'; 
+      document.body.appendChild(a); 
+      a.click(); 
+      a.remove(); 
+      URL.revokeObjectURL(url); 
+    } 
+    function dash(v) { return v == null || v === '' ? '—' : v; } 
+    function tryParseJSON(s) { 
+      if (typeof s !== 'string') return null; 
+      try { 
+        return JSON.parse(s); 
+
+      } catch { return null; } 
+    } 
+    function prettyJSONorRaw(s) { const obj = tryParseJSON(s); return obj ? JSON.stringify(obj, null, 2) : s ?? ''; } 
+    function hasJSON(s) { return typeof s === 'string' && tryParseJSON(s) != null; } 
+    $effect(() => { refresh(); }); 
+    $effect(() => { JSON.stringify(filters); refresh(); });
+    // refetch on filters change // Row actions 
+    function openMenu(evt, run) { menuRun = run; menuX = evt.clientX; menuY = evt.clientY; menuOpen = true; } 
+    function closeMenu() { menuOpen = false; menuRun = null; } 
+    function viewDetails(run) { alert('Run details:\n' + JSON.stringify(run, null, 2)); closeMenu(); } 
+
+
+
+
+
+
+
+    
+
+//    function viewLastUpdated(run) { 
+//      const text = run.last_text ? String(run.last_text) : '(no last text available)'; 
+//      alert(`Last updated text:\n\n${text}`); 
+//      closeMenu(); 
+//    }
+    
+    
+
+async function viewLastUpdated(run) {
+const sid = run?.session_id;
+try {
+
+  const url = 'http://127.0.0.1:5000/api/get-last-step-for-session_id?session_id=' + `${encodeURIComponent(sid)}` 
+
+//  const url = sid ? /api/get-last-step-for-session_id?session_id=${encodeURIComponent(sid)}:
+  const res = await fetch(url, { method: 'GET' });
+  if (!res.ok) throw new Error(`Server error: ${res.status}`);
+  
+  const data = await res.json();
+  const text = typeof data === 'string' ? data
+  : data?.last_step ?? data?.text ?? String(data);
+  alert('Last updated text:\n\n' + (text ?? ''));
+} catch (e) {
+alert('Error: ' + (e?.message ?? String(e)));
+} finally {
+closeMenu();
+}
+}
+
+
+  function openInterrupt(run) { 
+    guidanceText = ''; 
+    interruptError = null; 
+    interruptOpen = true; 
+    menuRun = run; 
+    menuOpen = false; 
+  } 
+  function cancelInterrupt() { 
+    if (interruptBusy) return; 
+    interruptOpen = false; 
+    interruptError = null; 
+    guidanceText = ''; 
+    menuRun = null; 
+  } 
+  
+
+
+async function confirmInterrupt() {
+  interruptBusy = true;
+  interruptError = null;
+  const session_id = menuRun?.session_id;
+  if (!session_id) {
+    interruptError = 'No session_id';
+    interruptBusy = false;
+    return;
+  }
+  try {
+    const res = await fetch('http://127.0.0.1:5000/api/interrupt-agent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id, guidance: guidanceText })
+    });
+    if (!res.ok) throw new Error(`Server error: ${res.status}`);
+    interruptOpen = false;
+    menuRun = null;
+    guidanceText = '';
+  } catch (e) {
+    interruptError = e.message || String(e);
+  } finally {
+    interruptBusy = false;
+  }
+}    
+
+
+  async function confirmResume(session_id) {
+
+    try { // Example payload (adjust to your API): // 
+      await fetch('http://127.0.0.1:5000/api/resume-agent', 
+      {  
+        method: 'POST',  
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(session_id) 
+      });
+
+      alert(`Resumed run (session_id=${menuRun?.session_id})`); 
+      menuRun = null; 
+    } catch (e) { interruptError = e.message || String(e); } finally { interruptBusy = false; } 
+  
+    
+  }
+
+
+  async function confirmPause(session_id) {
+
+    try { // Example payload (adjust to your API): // 
+      await fetch('http://127.0.0.1:5000/api/pause-agent', 
+      {  
+        method: 'POST',  
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(session_id) 
+      });
+
+      alert(`Paused run (session_id=${menuRun?.session_id})`); 
+      menuRun = null; 
+    } catch (e) { interruptError = e.message || String(e); } finally { interruptBusy = false; } 
+  
+    
+  }
+  
+  async function confirmStop(session_id) {
+  
+    try { // Example payload (adjust to your API): // 
+      await fetch('http://127.0.0.1:5000/api/stop-agent', 
+      {  
+        method: 'POST',  
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(session_id) 
+      });
+
+      alert(`Stopped run (session_id=${menuRun?.session_id})`); 
+      menuRun = null; 
+      guidanceText = ''; 
+    } catch (e) { interruptError = e.message || String(e); } finally { interruptBusy = false; } 
+  
+  }
+
+
+    async function deleteRun(run) { // High-level stub only; wire to your API later 
+      if (!window.confirm('Delete this run?')) return; 
+      try { 
+        await fetch(`http://127.0.0.1:5000/api/delete-run?session_id=${encodeURIComponent(run.session_id)}`, 
+          { method: 'DELETE' 
+
+          }); 
+      alert(`Would delete run (session_id=${run.session_id})`); 
+      // Reflect locally for now 
+      runs = runs.filter(r => r.session_id !== run.session_id); 
+      } finally { closeMenu(); 
+
+    } 
+  } 
+</script>
+
+<WindowFrame
+  {id}
+  {title}
+  bind:position
+  bind:size
+  {z}
+  onFocus={onFocusCb}
+  onRequestClose={requestClose} >
+
+  {#snippet children()}
+
+    <section class="runs-root"> <div class="toolbar"> <div class="filters"> <div class="field"> <label>Agent ID</label> <input type="text" placeholder="e.g. agent-123" bind:value={filters.agent_id} /> </div> <div class="field"> <label>Status</label> <select bind:value={filters.status}> <option value="">Any</option> <option value="running">running</option> <option value="succeeded">succeeded</option> <option value="failed">failed</option> <option value="stopped">stopped</option> </select> </div> <div class="field"> <label>Search</label> <input type="text" placeholder="run id, text…" bind:value={filters.q} /> </div> </div> <div class="actions"> <button type="button" onclick={refresh} title="Refresh">⟳ Refresh</button> <button type="button" onclick={exportCSV} title="Export CSV">⇩ Export CSV</button> </div> </div>
+    {#if loading}
+    <div class="loading">Loading…</div>
+    {:else if error}
+    <div class="err">Error: {error}</div>
+    {:else}
+    {#if runs.length}
+    <div class="table-wrap">
+    <table class="runs-table">
+    <thead>
+    <tr>
+    <th onclick={() => setSort('agent_id')} class:selected={sortBy==='agent_id'}>Agent</th>
+    <th onclick={() => setSort('status')} class:selected={sortBy==='status'}>Status</th>
+    <th onclick={() => setSort('session_id')} class:selected={sortBy==='session_id'}>Session Id</th>
+    <th onclick={() => setSort('created_at')} class:selected={sortBy==='created_at'}>Last Updated</th>
+    <th>Actions</th>
+    </tr>
+    </thead>
+    <tbody>
+    {#each runs as r}
+    <tr>
+    <td>{r.agent_id}</td>
+    <td class={'status ' + (r.status || '').toLowerCase()}>{r.status}</td>
+    <td>{r.session_id}</td>
+    <td>{fmtDate(r.created_at)}</td>
+    <td class="row-actions">
+    <button
+    type="button"
+    class="action-btn"
+    title="Actions"
+    onclick={(e) => openMenu(e, r)}
+    >⋯</button>
+    </td>
+    </tr>
+    {/each}
+    </tbody>
+    </table>
+    </div>
+    {:else}
+    <div class="empty">No runs found for current filters.</div>
+    {/if}
+    {/if}
+
+    </section> 
+  {/snippet} 
+</WindowFrame>
+{#if menuOpen}
+
+  <div class="popover-menu" style={`left: ${menuX}px; top: ${menuY}px;`} onclick={e => e.stopPropagation()} > 
+    <div class="pmenu-label"> Last updated: {fmtDate(menuRun?.created_at)} </div> 
+    <button class="pmenu-btn" onclick={() => viewDetails(menuRun)}>📄 View details</button> 
+    <button class="pmenu-btn" onclick={() => openLiveRun(menuRun)}>🕒 View last updated text</button> 
+    {#if (menuRun?.status || '').toLowerCase() === 'running'} 
+      <button class="pmenu-btn" onclick={() => confirmPause(menuRun.session_id)}>⏸️ Pause</button>
+      <button class="pmenu-btn" onclick={() => confirmStop(menuRun.session_id)}>⏹️ Stop</button>
+      <button class="pmenu-btn" onclick={() => openInterrupt(menuRun)}>🛑 Interrupt with guidance…</button>
+    {/if} 
+    {#if (menuRun?.status || '').toLowerCase() === 'paused'} 
+      
+      <button class="pmenu-btn" onclick={() => confirmResume(menuRun.session_id)}>▶️ Resume</button>
+    {/if}
+    {#if (menuRun?.status || '').toLowerCase() === 'stopped'} 
+      <button class="pmenu-btn danger" onclick={() => deleteRun(menuRun)}>🗑️ Delete run</button> 
+    {/if} 
+  </div> 
+  <div class="backdrop" onclick={closeMenu}></div> 
+
+{/if}
+
+{#if interruptOpen}
+
+    <div class="modal-backdrop" onclick={(e) => { if (e.target === e.currentTarget) cancelInterrupt(); }}> 
+      <div class="modal" role="dialog" aria-modal="true" aria-label="Interrupt Run"> 
+        <header class="modal-header">
+          <div class="title">Interrupt Run</div>
+        </header> 
+        <section class="modal-body"> 
+          <div class="field"> 
+            <label class="lbl">Session ID</label> 
+            <input type="text" value={menuRun?.session_id || ''} readonly class="input readonly" /> 
+          </div> 
+          <div class="field"> <label class="lbl">Guidance</label> 
+            <textarea rows="4" class="input" placeholder="Provide additional guidance…" bind:value={guidanceText}></textarea> 
+          </div> 
+          {#if interruptError}<div class="alert err">{interruptError}</div>{/if} 
+        </section> 
+        <footer class="modal-actions"> 
+          <button 
+            class="btn secondary" 
+            type="button" 
+            onclick={cancelInterrupt} 
+            disabled={interruptBusy}>Cancel
+          </button> 
+          <button 
+            class="btn primary" 
+            type="button" 
+            onclick={confirmInterrupt} 
+            disabled={interruptBusy || !guidanceText.trim()}
+            > 
+            {interruptBusy ? 'Sending…' : 'OK'} 
+          </button> 
+        </footer> 
+      </div> 
+    </div> 
+{/if} 
+
+{#each liveWindows as w (w.id)}
+<LiveRunWindow
+id={w.id}
+title={`Live Run: ${w.agent_id} / ${w.session_id}`}
+run={{ agent_id: w.agent_id, session_id: w.session_id }}
+z={z + 1}
+onFocus={() => {}}
+onRequestClose={() => closeLiveRun(w.id)}
+/>
+{/each}
+
+<style> 
+  .runs-root { display: grid; grid-template-rows: auto 1fr; gap: 10px; height: 100%; } 
+  .toolbar { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; } 
+  .filters { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; } 
+  .field { display: grid; gap: 6px; } 
+  .field label { font-size: 12px; color: #6b7280; } 
+  input[type="text"], select { 
+    padding: 8px 10px; 
+    border: 1px solid #d1d5db; 
+    border-radius: 8px; 
+    outline: none; 
+    transition: border-color 120ms, box-shadow 120ms; 
+  } 
+  input[type="text"]:focus, select:focus { 
+    border-color: #2563eb; 
+    box-shadow: 0 0 0 3px rgba(37,99,235,0.16); 
+  } 
+  .actions { display: flex; gap: 8px; } 
+  .actions button { 
+    padding: 8px 12px; 
+    border-radius: 8px; 
+    border: 1px solid #d1d5db; background: #667dc6; cursor: pointer; 
+  } 
+  .actions button:hover { background: #183681; border-color: #c7d2fe; } 
+  .loading, .empty, .err { padding: 10px; } .err { color: #b91c1c; } 
+  .table-wrap { overflow: auto; } table.runs-table { 
+    width: 100%; 
+    border-collapse: separate; 
+    border-spacing: 0; 
+    border: 1px solid #e5e7eb; 
+    border-radius: 10px; 
+    background: #fff; 
+  } 
+  thead th { 
+    background: #5d8ef0; 
+    position: sticky; 
+    top: 0; 
+    z-index: 1; 
+    padding: 8px 10px; 
+    text-align: left; 
+    cursor: pointer; 
+    border-bottom: 1px solid #e5e7eb; 
+  } 
+  thead th.selected { color: #1d4ed8; } 
+  tbody td { padding: 8px 10px; border-bottom: 1px solid #f3f4f6; vertical-align: middle; } 
+  tbody tr { 
+    background: #b4b9c4; 
+    position: sticky; 
+    top: 0; z-index: 1; 
+    padding: 8px 10px; 
+    text-align: left; 
+    cursor: default; 
+    border-bottom: 1px solid #de6712; 
+  } 
+  .row-actions { text-align: right; } 
+  .action-btn { 
+    padding: 6px 10px; 
+    border-radius: 8px; 
+    border: 1px solid #d1d5db; 
+    background: #9399eb; 
+    cursor: pointer; 
+  } 
+  
+  .action-btn:hover { background: #2651bc; } 
+  .status.succeeded { color: #0f766e; font-weight: 600; } 
+  .status.stopped { color: #b91c1c; font-weight: 600; } 
+  .status.running { color: #2563eb; font-weight: 600; } 
+  /* Popover menu (mirrors AgentsListWindow styling) */ 
+  .popover-menu { 
+    position: fixed; 
+    z-index: 1000; 
+    background: #938ae7; 
+    border: 1px solid #ddd; 
+    border-radius: 8px; 
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12); 
+    padding: 6px 0; 
+    min-width: 220px; 
+    font-size: 1em; 
+  } 
+  .pmenu-label { 
+    padding: 8px 18px; 
+    color: #0f172a; 
+    font-weight: 600; 
+    border-bottom: 1px solid rgba(0,0,0,0.06); 
+    background: rgba(255,255,255,0.4); 
+  } 
+  .pmenu-btn { 
+    display: block; 
+    width: 100%; 
+    text-align: left; 
+    border: none; 
+    background: none; 
+    padding: 8px 18px; 
+    cursor: pointer; 
+  } 
+  .pmenu-btn:hover { background: #2957b3; color: #fff; } 
+  .pmenu-btn.danger { color: #b91c1c; } 
+  .backdrop { position: fixed; inset: 0; background: transparent; z-index: 999; } 
+  /* Interrupt modal (mirrors AgentLaunchModal styling) */ 
+  :root { --accent: var(--fi-accent, #2563eb); 
+  --text: #0f172a; --muted: #64748b; --border: #e5e7eb; --subtle: #f8fafc; --radius: 12px; } 
+  .modal-backdrop { 
+    position: fixed; 
+    inset: 0; 
+    background: rgba(234, 227, 227, 0.35); 
+    backdrop-filter: blur(4px); 
+    display: grid; 
+    place-items: center; 
+    z-index: 2000; 
+    padding: 16px; 
+  } 
+  .modal { 
+    width: min(560px, 92vw); 
+    max-height: calc(100vh - 32px); 
+    display: grid; 
+    grid-template-rows: auto 1fr auto; 
+    background: #1c1b1b; border: 1px solid var(--border); 
+    border-radius: var(--radius); 
+    box-shadow: 0 18px 48px rgba(0,0,0,0.22); 
+    overflow: hidden; color: var(--text); 
+  } 
+  .modal-header { 
+    padding: 14px 16px; 
+    background: linear-gradient(180deg, color-mix(in oklab, var(--accent) 96%, #fff 0%), var(--accent)); 
+    color: #fff; 
+    border-bottom: 1px solid color-mix(in oklab, var(--accent) 20%, #000 0%); 
+  } 
+  .modal-header .title { font-weight: 800; letter-spacing: 0.2px; } 
+  .modal-body { padding: 14px 16px; display: grid; gap: 14px; overflow-y: auto; background: #ebe8e8; } 
+  .lbl { font-size: 12px; font-weight: 700; color: #334155; letter-spacing: 0.02em; } 
+  .input { 
+    width: 100%; 
+    padding: 10px 12px; border: 1px solid var(--border); 
+    border-radius: 10px; 
+    background: #faf6f6; 
+    color: var(--text); 
+    outline: none; 
+    transition: border-color 120ms, box-shadow 120ms, background-color 120ms; 
+    box-shadow: inset 0 1px 0 rgba(0,0,0,0.03); 
+  } 
+  .input.readonly { 
+    background: #f5f7f9; 
+    color: #475569; 
+  } 
+  textarea.input { 
+    resize: vertical; 
+    min-height: 82px; 
+  } 
+  .modal-actions { 
+    display: flex; 
+    justify-content: flex-end; 
+    gap: 10px; 
+    padding: 12px 16px; 
+    border-top: 1px solid var(--border); 
+    background: #fafafa; 
+  } 
+  .btn { 
+    padding: 9px 14px; 
+    border-radius: 10px; 
+    font-weight: 700; 
+    cursor: pointer; 
+    border: 1px solid #cbd5e1; 
+    background: #fff; color: var(--text); 
+    transition: filter 120ms ease, transform 80ms ease, box-shadow 120ms ease, background 120ms ease, border-color 120ms ease; 
+  } 
+  .btn.primary { 
+    border-color: color-mix(in oklab, var(--accent) 80%, #1d4ed8); 
+    background: var(--accent); 
+    color: #fff; box-shadow: 0 2px 8px color-mix(in oklab, var(--accent) 30%, #000 0%); 
+  } 
+  .btn.primary:hover { filter: brightness(1.05); } 
+  .btn.secondary { background: #fff; } 
+  .btn:disabled { opacity: 0.7; cursor: not-allowed; } 
+  .alert.err { 
+    color: #7f1d1d; 
+    background: #fef2f2; 
+    border: 1px solid #fee2e2; 
+    padding: 10px 12px; 
+    border-radius: 10px; 
+  } 
+</style>
+
+
 === ../dyna/src/SelectField.svelte ===
 <script>
   export let label = "";
@@ -1777,6 +3302,168 @@ export default {
 </label>
 
 
+
+=== ../dyna/src/ConfirmModal.svelte ===
+<script> 
+    let { 
+        open = $bindable(false), 
+        title = 'Confirm', message = '', 
+        okLabel = 'OK', 
+        cancelLabel = 'Cancel', 
+        busy = $bindable(false), 
+        onConfirm: 
+        onConfirmCb, 
+        onCancel: onCancelCb 
+    } = $props(); 
+    
+    function confirm() { if (!busy) onConfirmCb?.(); } 
+    function cancel() { if (!busy) onCancelCb?.(); } 
+</script>
+
+
+{#if open}
+    <div 
+        class="modal-backdrop" 
+        onclick={(e) => { if (e.target === e.currentTarget) cancel(); }}> 
+        <div 
+            class="modal" 
+            role="dialog" 
+            aria-modal="true" 
+            aria-label={title}> 
+            <header class="modal-header"> 
+                <div class="title">{title}</div> 
+            </header>
+            <section class="modal-body">
+                <div class="msg">{message}</div>
+            </section>
+
+            <footer class="modal-actions">
+                <button type="button" class="btn secondary" onclick={cancel} disabled={busy}>{cancelLabel}</button>
+                <button type="button" class="btn primary" onclick={confirm} disabled={busy}>{busy ? 'Working…' : okLabel}</button>
+            </footer>
+        </div>
+    </div> 
+{/if} 
+
+<style> 
+    :root { --accent: var(--fi-accent, #2563eb); --text:#0f172a; --border:#e5e7eb; --radius:12px; } 
+    .modal-backdrop { 
+        position:fixed; 
+        inset:0; 
+        background:rgba(15,23,42,0.35); 
+        backdrop-filter:blur(4px); 
+        display:grid; 
+        place-items:center; 
+        z-index:2000; 
+        padding:16px; 
+    } 
+    .modal { 
+        width:min(560px,92vw); 
+        display:grid; 
+        grid-template-rows:auto 1fr auto; 
+        background:#fff; 
+        border:1px solid var(--border); 
+        border-radius:var(--radius); 
+        box-shadow:0 18px 48px rgba(0,0,0,0.22); 
+        overflow:hidden; 
+        color:var(--text); 
+    } 
+    
+    .modal-header { 
+        padding:14px 16px; 
+        background:linear-gradient(180deg, color-mix(in oklab, var(--accent) 96%, #fff 0%), var(--accent)); 
+        color:#fff; 
+    } 
+    .modal-header 
+    .title { font-weight:800; } 
+    .modal-body { padding:14px 16px; } 
+    .msg { white-space:pre-wrap; } 
+    .modal-actions { 
+        display:flex; 
+        justify-content:flex-end; 
+        gap:10px; 
+        padding:12px 16px; 
+        border-top:1px solid var(--border); 
+        background:#fafafa; 
+    } 
+    .btn { 
+        padding:9px 14px; 
+        border-radius:10px; 
+        font-weight:700; 
+        cursor:pointer; 
+        border:1px solid #cbd5e1; 
+        background:#fff; 
+    } 
+    
+    .btn.primary { 
+        border-color:#1d4ed8; 
+        background:var(--accent); color:#fff; 
+        box-shadow:0 2px 8px rgba(37,99,235,0.25); 
+    } 
+    .btn.primary:hover { 
+        filter:brightness(1.05); 
+    } 
+.btn.secondary { background:#fff; } .btn:disabled { opacity:.7; cursor:not-allowed; }
+</style>
+
+<!--
+
+Use it where you need the specialized message
+
+<script> 
+    import ConfirmModal from './ConfirmModal.svelte'; 
+    // ... 
+    let pauseOpen = $state(false); 
+    let pauseBusy = $state(false); 
+    let pauseTarget = $state({ agent_id: '', session_id: '' }); 
+    let pauseErr = $state(null); 
+    function openPause(run) { 
+        pauseTarget = { agent_id: run.agent_id, session_id: run.session_id }; 
+        pauseErr = null; 
+        pauseOpen = true; 
+    } 
+    async function confirmPause() { 
+        pauseBusy = true; 
+        pauseErr = null; 
+        try { // Placeholder call; wire to your API later: // 
+            await fetch('http://127.0.0.1:5000/api/pause-session', 
+                { // method: 'POST', 
+                // headers: { 'Content-Type': 'application/json' }, 
+                // body: JSON.stringify(pauseTarget) // 
+            }); 
+            alert(`Would pause session ${pauseTarget.session_id} of agent ${pauseTarget.agent_id}`); 
+            pauseOpen = false; 
+        } catch (e) { pauseErr = e.message || String(e); } finally { pauseBusy = false; } 
+    } 
+    
+    function cancelPause() { if (pauseBusy) return; pauseOpen = false; } 
+</script>
+
+
+Somewhere in your UI (e.g., an Actions popover), call openPause(r) to show the modal.
+
+Place the modal once at the bottom of the component:
+
+<ConfirmModal
+    open={pauseOpen}
+    bind:busy={pauseBusy}
+    title="Confirm Pause"
+    message={You are about to pause the session ${pauseTarget.session_id} of agent ${pauseTarget.agent_id}.}
+    okLabel="Pause"
+    cancelLabel="Cancel"
+    onConfirm={confirmPause}
+    onCancel={cancelPause}
+/>
+
+Notes
+
+The message prop is just a string; use template literals to inject agent_id/session_id for bespoke messaging.
+The modal style matches your existing AgentLaunchModal for visual consistency.
+You can reuse this ConfirmModal for delete confirmations or any OK/Cancel need by changing title/message/okLabel.
+
+
+
+-->
 
 === ../dyna/src/lib/Counter.svelte ===
 <script>
@@ -1946,6 +3633,31 @@ export function resizable(node, options = {}) {
     };
 }
 
+=== ../dyna/src/windows/RenderAgentRuns.svelte ===
+<script> 
+    import AgentRunsWindow from '../AgentRunsWindow.svelte'; 
+    let { 
+        w, 
+        onFocus, 
+        onRequestClose, 
+        position = $bindable(w.position), 
+        size = $bindable(w.size), 
+        z = $bindable(w.z), 
+        persist = $bindable(w.persist), 
+        filters = $bindable(w.filters) 
+    } = $props(); 
+</script>
+<AgentRunsWindow
+    id={w.id}
+    title={w.title}
+    bind:position
+    bind:size
+    bind:z
+    bind:filters
+    onFocus={onFocus}
+    onRequestClose={onRequestClose}
+/>
+
 === ../dyna/src/windows/RenderForm.svelte ===
 <script> 
     import FormWindow from '../FormWindow.svelte'; 
@@ -1973,6 +3685,23 @@ export function resizable(node, options = {}) {
 
 
 
+=== ../dyna/src/windows/RenderOrderEditor.svelte ===
+<script> 
+    import OrderEditorWindow from '../OrderEditorWindow.svelte'; 
+    const { w, onFocus, onRequestClose } = $props(); 
+</script>
+<OrderEditorWindow
+id={w.id}
+title={w.title}
+bind:position={w.position}
+bind:size={w.size}
+z={w.z}
+persist={w.persist ?? 'destroy'}
+onFocus={onFocus}
+onRequestClose={onRequestClose}
+/>
+
+
 === ../dyna/src/windows/RenderMetadata.svelte ===
 <script> 
     import MetaDataWindow from '../MetaDataWindow.svelte'; 
@@ -1994,16 +3723,54 @@ export function resizable(node, options = {}) {
 />
 
 
+=== ../dyna/src/windows/RenderAgentsList.svelte ===
+<script>
+import AgentsListWindow from '../AgentsListWindow.svelte';
+let {
+    w,
+    onFocus,
+    onRequestClose,
+    // ADD the bindable props you want to relay:
+    position = $bindable(w.position),
+    size = $bindable(w.size),
+    z = $bindable(w.z),
+    persist = $bindable(w.persist)
+} = $props();
+</script>
+
+<AgentsListWindow
+  id={w.id}
+  title={w.title}
+  bind:position
+  bind:size
+  bind:z
+  onFocus={onFocus}
+  onRequestClose={onRequestClose}
+/>
+
+
 === ../dyna/src/windows/registry.js ===
 import RenderForm from './RenderForm.svelte';
 import RenderChat from './RenderChat.svelte';
 import RenderMetadata from './RenderMetadata.svelte';
 import RenderPlugin from '../RenderPlugin.svelte';
+import RenderAgentsList from './RenderAgentsList.svelte';
+import RenderOrderEditor from './RenderOrderEditor.svelte';
+import RenderAgentRuns from './RenderAgentRuns.svelte';
+import RenderRunDetail from './RenderRunDetail.svelte';
+import LiveRunRenderer from './RenderLiveRun.svelte';
+
+
 export const WINDOW_RENDERERS = {
     form: RenderForm,
     chat: RenderChat,
     metadata: RenderMetadata,
-    plugin: RenderPlugin  
+    plugin: RenderPlugin,
+    agentsList: RenderAgentsList,
+    orderEditor: RenderOrderEditor,
+    agentRuns: RenderAgentRuns,
+    runDetail: RenderRunDetail,
+    liveRun: LiveRunRenderer
 };
 
 
@@ -2030,4 +3797,48 @@ export const WINDOW_RENDERERS = {
 />
 
 
+
+=== ../dyna/src/windows/RenderRunDetail.svelte ===
+<script> 
+    import RunDetailWindow from '../RunDetailWindow.svelte'; 
+    let { 
+        w, 
+        onFocus, 
+        onRequestClose, 
+        position = $bindable(w.position), 
+        size = $bindable(w.size), 
+        z = $bindable(w.z) 
+    } = $props(); 
+</script>
+
+<RunDetailWindow
+id={w.id}
+title={w.title}
+bind:position
+bind:size
+bind:z
+run={w.run}
+onFocus={onFocus}
+onRequestClose={onRequestClose}
+/>
+
+
+=== ../dyna/src/windows/RenderLiveRun.svelte ===
+<script> 
+    import LiveRunWindow from '../LiveRunWindow.svelte'; 
+    export let w; 
+    export let onFocus; 
+    export let onRequestClose; 
+</script>
+<LiveRunWindow
+    id={w.id}
+    title={w.title}
+    bind:position={w.position}
+    bind:size={w.size}
+    z={w.z}
+    persist={w.persist}
+    run={w.run}
+    onFocus={onFocus}
+    onRequestClose={onRequestClose}
+/>
 

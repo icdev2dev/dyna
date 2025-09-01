@@ -90,8 +90,18 @@
 </script> 
 
 
-<!--
+
 <div class="toolbar"> 
+
+        <button type="button" onclick={() =>
+        controller.spawn({ kind: 'conversations', title: 'Conversations', persist: 'keep', size: { w: 410, h: 560 }})}
+        >
+
+        Conversations
+        </button>
+
+</div>
+<!--
     <button type="button" 
         onclick={() => controller?.spawn({ 
                             kind: 'plugin', 
@@ -104,18 +114,6 @@
                         }) 
                         } > Open Hello Plugin </button> 
 
-        <button type="button" onclick={() =>
-        controller?.spawn({
-            kind: 'agentsList',
-            title: 'Available Agents',
-            persist: 'keep',
-            size: { w: 740, h: 420 },
-            position: { x: 120, y: 120 }
-        })}
-        >
-
-        Available Agents
-        </button>
 
 
 

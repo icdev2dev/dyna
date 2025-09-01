@@ -92,6 +92,13 @@ class BamlSyncClient:
             "arg": arg,
         })
         return typing.cast(str, result.cast_to(types, types, stream_types, False, __runtime__))
+    def RAG(self, question: str,context: str,
+        baml_options: BamlCallOptions = {},
+    ) -> types.Response:
+        result = self.__options.merge_options(baml_options).call_function_sync(function_name="RAG", args={
+            "question": question,"context": context,
+        })
+        return typing.cast(types.Response, result.cast_to(types, types, stream_types, False, __runtime__))
     def SampleInput(self, text: str,
         baml_options: BamlCallOptions = {},
     ) -> types.StepFrameIn:
@@ -139,6 +146,18 @@ class BamlStreamClient:
           result,
           lambda x: typing.cast(str, x.cast_to(types, types, stream_types, True, __runtime__)),
           lambda x: typing.cast(str, x.cast_to(types, types, stream_types, False, __runtime__)),
+          ctx,
+        )
+    def RAG(self, question: str,context: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.BamlSyncStream[stream_types.Response, types.Response]:
+        ctx, result = self.__options.merge_options(baml_options).create_sync_stream(function_name="RAG", args={
+            "question": question,"context": context,
+        })
+        return baml_py.BamlSyncStream[stream_types.Response, types.Response](
+          result,
+          lambda x: typing.cast(stream_types.Response, x.cast_to(types, types, stream_types, True, __runtime__)),
+          lambda x: typing.cast(types.Response, x.cast_to(types, types, stream_types, False, __runtime__)),
           ctx,
         )
     def SampleInput(self, text: str,
@@ -204,6 +223,13 @@ class BamlHttpRequestClient:
             "arg": arg,
         }, mode="request")
         return result
+    def RAG(self, question: str,context: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        result = self.__options.merge_options(baml_options).create_http_request_sync(function_name="RAG", args={
+            "question": question,"context": context,
+        }, mode="request")
+        return result
     def SampleInput(self, text: str,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.baml_py.HTTPRequest:
@@ -245,6 +271,13 @@ class BamlHttpStreamRequestClient:
     ) -> baml_py.baml_py.HTTPRequest:
         result = self.__options.merge_options(baml_options).create_http_request_sync(function_name="JokeTeller", args={
             "arg": arg,
+        }, mode="stream")
+        return result
+    def RAG(self, question: str,context: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        result = self.__options.merge_options(baml_options).create_http_request_sync(function_name="RAG", args={
+            "question": question,"context": context,
         }, mode="stream")
         return result
     def SampleInput(self, text: str,

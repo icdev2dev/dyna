@@ -11,12 +11,11 @@ from .agents_endpoints import create_agent, stop_agent
 from .agents_endpoints import pause_agent, resume_agent
 from .agents_endpoints import interrupt_agent
 
-
-
-
 from .chat_api import chat_endpoint
 from .form_api import prompt_to_schema_endpoint
 from .not_impl import not_implemented
+
+from .conversations_endpoints import list_conversations_endpoint, conversation_messages_endpoint
 
 # 1. All your websocket handlers go here.
 def ws_test(data, socketio, sid):
@@ -56,7 +55,9 @@ MAP_HTTP_FUNCS = [
     ["/api/stop-agent",stop_agent , ['POST']],
     ["/api/pause-agent", pause_agent, ['POST']],
     ["/api/resume-agent",resume_agent , ['POST']],
-    ["/api/interrupt-agent",interrupt_agent , ['POST']],
+    ["/api/interrupt-agent",interrupt_agent , ['POST']],    
 
+    ["/api/conversations", list_conversations_endpoint, ['GET']],
+    ["/api/conversation-messages", conversation_messages_endpoint, ['GET']],  
     # ...add more
 ]

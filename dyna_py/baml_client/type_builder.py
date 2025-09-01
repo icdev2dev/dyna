@@ -20,7 +20,7 @@ from .globals import DO_NOT_USE_DIRECTLY_UNLESS_YOU_KNOW_WHAT_YOURE_DOING_RUNTIM
 class TypeBuilder(type_builder.TypeBuilder):
     def __init__(self):
         super().__init__(classes=set(
-          ["MonikerData","MonikerGuidance","MonikerState","MonikerStepFrameIn","MonikerStepFrameOut","StepFrameIn","StepFrameOut",]
+          ["MonikerData","MonikerGuidance","MonikerState","MonikerStepFrameIn","MonikerStepFrameOut","Response","StepFrameIn","StepFrameOut",]
         ), enums=set(
           ["GenericStepOutControl","GenericStepOutStatus",]
         ), runtime=DO_NOT_USE_DIRECTLY_UNLESS_YOU_KNOW_WHAT_YOURE_DOING_RUNTIME)
@@ -39,7 +39,7 @@ class TypeBuilder(type_builder.TypeBuilder):
 
 
     # #########################################################################
-    # Generated classes 7
+    # Generated classes 8
     # #########################################################################
 
     @property
@@ -61,6 +61,10 @@ class TypeBuilder(type_builder.TypeBuilder):
     @property
     def MonikerStepFrameOut(self) -> "MonikerStepFrameOutViewer":
         return MonikerStepFrameOutViewer(self)
+
+    @property
+    def Response(self) -> "ResponseViewer":
+        return ResponseViewer(self)
 
     @property
     def StepFrameIn(self) -> "StepFrameInViewer":
@@ -170,7 +174,7 @@ class GenericStepOutStatusValues:
 
 
 # #########################################################################
-# Generated classes 7
+# Generated classes 8
 # #########################################################################
 
 class MonikerDataAst:
@@ -408,6 +412,49 @@ class MonikerStepFrameOutProperties:
     @property
     def notes(self) -> type_builder.ClassPropertyViewer:
         return type_builder.ClassPropertyViewer(self.__bldr.property("notes"))
+    
+    
+
+
+class ResponseAst:
+    def __init__(self, tb: type_builder.TypeBuilder):
+        _tb = tb._tb # type: ignore (we know how to use this private attribute)
+        self._bldr = _tb.class_("Response")
+        self._properties: typing.Set[str] = set([  "can_the_question_be_answered",  "raionale",  ])
+        self._props = ResponseProperties(self._bldr, self._properties)
+
+    def type(self) -> baml_py.FieldType:
+        return self._bldr.field()
+
+    @property
+    def props(self) -> "ResponseProperties":
+        return self._props
+
+
+class ResponseViewer(ResponseAst):
+    def __init__(self, tb: type_builder.TypeBuilder):
+        super().__init__(tb)
+
+    
+    def list_properties(self) -> typing.List[typing.Tuple[str, type_builder.ClassPropertyViewer]]:
+        return [(name, type_builder.ClassPropertyViewer(self._bldr.property(name))) for name in self._properties]
+    
+
+
+class ResponseProperties:
+    def __init__(self, bldr: baml_py.ClassBuilder, properties: typing.Set[str]):
+        self.__bldr = bldr
+        self.__properties = properties # type: ignore (we know how to use this private attribute) # noqa: F821
+
+    
+    
+    @property
+    def can_the_question_be_answered(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("can_the_question_be_answered"))
+    
+    @property
+    def raionale(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("raionale"))
     
     
 

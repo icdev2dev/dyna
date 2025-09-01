@@ -1,65 +1,151 @@
 === ./joke_agent.py ===
-import asyncio
-from baml_test import tell_a_joke
-from agent_core import InterruptMixin, AgentBase, PauseMixin, StopMixin
+from typing import Optional
 
-class JokeAgent(StopMixin, PauseMixin, InterruptMixin, AgentBase):
-    def __init__(self, agent_id, initial_subject="foot"):
-        super().__init__(agent_id)
+from baml_client.async_client import b
+from baml_client.types import StepFrameIn, StepFrameOut
+
+from agent_core import PauseMixin, InterruptMixin
+from agent_loop import LoopingAgentBase, StepOutcome
+
+class JokeAgent(PauseMixin, InterruptMixin, LoopingAgentBase):
+    def __init__(
+        self,
+        agent_id: str,
+        session_id: str,
+        *,
+        initial_subject: str = "foot",
+
+        state_updater=None,
+        steps_appender=None,
+
+        loop_interval: float = 30.0,
+
+        guidance_interpreter=None,  # optional: free-form -> structured dict
+
+        persist_guidance_raw: bool = True,
+        persist_guidance_normalized: bool = True,
+    ):
+        self.current_subject = initial_subject  # set first
+        super().__init__(
+            agent_id,
+            session_id,
+            state_updater=state_updater,
+            steps_appender=steps_appender,
+            loop_interval=loop_interval,
+            guidance_interpreter=guidance_interpreter,
+            persist_guidance_raw=persist_guidance_raw,
+            persist_guidance_normalized=persist_guidance_normalized,
+        )
         self.current_subject = initial_subject
-        self._task = None  # set by creator
 
-    async def run(self):
-        step = 0
-        print(f"JokeAgent {self.agent_id} started!")
-        while True:
-            if self.should_stop():
-                print(f"JokeAgent {self.agent_id}: stopping.")
-                break
+    def initial_context(self) -> Optional[dict]:
+        return {
+            "agent_type": "JokeAgent",
+            "subject": self.current_subject,
+        }
 
-            await self.wait_if_paused()
+    async def apply_guidance(self, g) -> Optional[dict]:
+        
+        try:
+            if isinstance(g, dict) and "subject" in g:
+                self.current_subject = str(g["subject"])
+                return {"subject": self.current_subject}
+            # Simple heuristic if free-form text is provided and no interpreter
+            if isinstance(g, dict) and "_raw_text" in g:
+                raw = g["_raw_text"]
+                # naive parse: "subject: X" or "about X"
+                import re
+                m = re.search(r"(?:subject\s*:\s*|about\s+)([A-Za-z0-9 _-]{2,})", str(raw), re.IGNORECASE)
+                if m:
+                    self.current_subject = m.group(1).strip()
+                    return {"subject": self.current_subject}
+        except Exception:
+            pass
+        return None
 
-                    # Allow stop to break out even if we were paused
-            if self.should_stop():
-                print(f"JokeAgent {self.agent_id}: stopping after pause.")
-                break
+    async def do_tick(self, step: int) -> StepOutcome:
 
-            # Check for new guidance
-            guidance = await self.check_interrupt()
-            if guidance is not None:
-                # Expect guidance as a dict: { "subject": "cats" }
-                if isinstance(guidance, dict) and "subject" in guidance:
-                    self.current_subject = guidance["subject"]
-                    print(f"JokeAgent {self.agent_id}: now telling jokes about {self.current_subject}")
-                    # Optionally, you could print a cue or do something else
+        in_arg = StepFrameIn(context=self.current_subject, guidance="")
+        joke =  await b.TellAJokeV2(in_arg=in_arg)
 
-            joke = await tell_a_joke(self.current_subject)
-            print(f"[Agent {self.agent_id}] Joke: {joke}")
+        text = getattr(joke, "text", None) or str(joke)
 
-            await asyncio.sleep(3)
-            step += 1
+        # Provide agent state for storage; include paused for transparency
+        state = {"subject": self.current_subject, "paused": self._paused_flag()}
 
-
+        return StepOutcome(
+            status="ok",
+            text=text,
+            state=state,
+        )
+    
 
 === ./agent.py ===
 
 import asyncio
-from environment import environment_reload
+import json
+from datetime import datetime
+
 from queue_imp import mark_action_processed_async, QUEUE_NAME
 
 from agent_core import AgentBase, InterruptMixin
 from joke_agent import JokeAgent
-import json
 
-import json
+from store.agent_state import upsert_agent_state, get_agent_state
 from environment import environment_reload as _environment_reload
+from persona_agent import PersonaAgent
+from store.conversations import add_participant
 
 JOKE_AGENTS = {}  # agent_id -> JokeAgent
+SESSIONS = {}              # session_id -> instance
+AGENT_LATEST = {}          # agent_id -> latest session_id
+
+
+async def upsert_state_async(agent_id, status=None, iteration=None, result=None, context=None, history=None,  session_id=None):
+    def do_upsert():
+        try:
+            prev = get_agent_state(agent_id, session_id=session_id)
+                        
+        except Exception as e:
+            print(f"get_agent_state failed for {agent_id}/{session_id}: {e}")
+            prev = {}
+
+        eff_status = status or (prev.get("status") if prev else "running")
+        upsert_agent_state(
+            agent_id=agent_id,
+            session_id=session_id,
+            status=eff_status,
+            iteration=iteration,
+            result=result,
+            context=context,
+            history=history,
+        )
+    await asyncio.to_thread(do_upsert)
+
+
+
+def _resolve_agent(agent_id=None, session_id=None):
+    # Prefer session_id if supplied
+
+    
+    if session_id and session_id in SESSIONS:
+        return session_id, SESSIONS.get(session_id)
+    # Fallback: latest session for agent_id
+    if agent_id and agent_id in AGENT_LATEST:
+        sid = AGENT_LATEST[agent_id]
+        return sid, SESSIONS.get(sid)
+    # Legacy: single-agent map
+    if agent_id and agent_id in JOKE_AGENTS:
+        return None, JOKE_AGENTS.get(agent_id)
+    return None, None
+
+
 
 
 async def environment_reload_handler(db, async_tbl, action):
     action_id = action.get("action_id")
     try:
+        from environment import environment_reload as _environment_reload
         await _environment_reload(action)
     finally:
         if action_id:
@@ -68,29 +154,103 @@ async def environment_reload_handler(db, async_tbl, action):
 # Agent action handlers
 
 
+
+
+
+
 async def agent_create(db, async_tbl, action):
+    import functools, uuid
+
     print(f"Creating agent: {action.get('action_id')} ...")
     action_id = action.get("action_id")
     try:
         payload = json.loads(action.get("payload") or "{}")
+
         agent_id = payload.get("agent_id")
+        agent_type = payload.get("agent_type") or "JokeAgent"
+        conversation_id = payload.get("conversation_id")
+        persona_config = payload.get("persona_config") or {}
         initial_subject = payload.get("initial_subject", "foot")
+        
+        session_id = payload.get("session_id") or action.get("session_id") or str(uuid.uuid4())
+
         if not agent_id:
             print("create_agent missing agent_id in payload")
             return
 
-        if agent_id not in JOKE_AGENTS:
-            agent = JokeAgent(agent_id, initial_subject=initial_subject)
-            JOKE_AGENTS[agent_id] = agent
-            task = asyncio.create_task(agent.run())
-            agent._task = task
-            print(f"Agent {agent_id}: launching JokeAgent loop (subject={initial_subject})")
+        if session_id in SESSIONS:
+            print(f"Session {session_id} already exists; skipping.")
+            return
+
+
+
+        if agent_type == "PersonaAgent":
+            agent = PersonaAgent(
+                agent_id,
+                session_id,
+                conversation_id=conversation_id,
+                persona_config=persona_config,
+                loop_interval=payload.get("loop_interval", 1.5),
+                state_updater=functools.partial(upsert_state_async, agent_id=agent_id, session_id=session_id),
+                steps_appender=functools.partial(
+                    __import__("store.steps_async", fromlist=["append_step_async"]).append_step_async,
+                    agent_id,
+                    session_id=session_id
+                ),
+            )
         else:
-            print(f"Agent {agent_id} already exists; skipping.")
+            agent = JokeAgent(
+                agent_id,
+                session_id,
+                initial_subject=initial_subject,
+                state_updater=functools.partial(upsert_state_async, agent_id=agent_id, session_id=session_id),
+                steps_appender=functools.partial(
+                # append_step_async signature (agent_id, iteration, **fields)
+                __import__("store.steps_async", fromlist=["append_step_async"]).append_step_async,
+                agent_id,
+                session_id=session_id
+                ),
+            )
+
+
+
+
+
+
+
+
+
+        # Register
+        SESSIONS[session_id] = agent
+        AGENT_LATEST[agent_id] = session_id
+        JOKE_AGENTS[agent_id] = agent  # legacy compatibility
+
+
+        try:
+            if agent_type == "PersonaAgent" and conversation_id:
+                add_participant(conversation_id, agent_id, session_id, persona_config)
+        except Exception as e:
+            print(f"add_participant failed: {e}")
+
+
+        task = asyncio.create_task(agent.run())
+        agent._task = task
+
+
+
+        atype = "PersonaAgent" if agent_type == "PersonaAgent" else "JokeAgent"
+        print(f"Agent {agent_id}/{session_id}: launching {atype} loop"
+        + (f" (conversation={conversation_id})" if agent_type == "PersonaAgent" else f" (subject={initial_subject})"))
+
+
+
     finally:
         if action_id:
             await mark_action_processed_async(async_tbl, action_id)
             print(f"Marked action_id {action_id} as processed.")
+
+
+
 
 
 
@@ -99,22 +259,19 @@ async def agent_destroy(db, async_tbl, action):
     try:
         payload = json.loads(action.get("payload") or "{}")
         agent_id = payload.get("agent_id") or action.get("agent_id")
-        if not agent_id:
-            print("agent_destroy missing agent_id")
-            return
-
-        agent = JOKE_AGENTS.get(agent_id)
+        session_id = payload.get("session_id") or action.get("session_id")
+        sid, agent = _resolve_agent(agent_id=agent_id, session_id=session_id)
         if not agent:
-            print(f"Agent {agent_id} not found.")
+            print(f"Agent not found for agent_id={agent_id}, session_id={session_id}")
+            await upsert_state_async(agent_id, status="stopped", context={"ended_at": datetime.now().isoformat()}, session_id=sid or session_id)
             return
 
-        # If paused, wake it so it can exit
+        await upsert_state_async(agent.agent_id, status="stopping", session_id=sid or session_id)
+
         if hasattr(agent, "resume"):
             agent.resume()
-        # Request cooperative stop
         if hasattr(agent, "request_stop"):
             agent.request_stop()
-
         task = getattr(agent, "_task", None)
         if isinstance(task, asyncio.Task):
             try:
@@ -126,90 +283,101 @@ async def agent_destroy(db, async_tbl, action):
                 except asyncio.CancelledError:
                     pass
 
-        # Cleanup registry
-        JOKE_AGENTS.pop(agent_id, None)
-        print(f"Agent {agent_id} destroyed.")
+        # Cleanup
+        if sid:
+            SESSIONS.pop(sid, None)
+        if agent_id and AGENT_LATEST.get(agent_id) == sid:
+            pass  # keep or update elsewhere
+        if agent_id:
+            JOKE_AGENTS.pop(agent_id, None)
+
+        await upsert_state_async(agent.agent_id, status="stopped", context={"ended_at": datetime.now().isoformat()}, session_id=sid or session_id)
+        print(f"Agent {agent.agent_id}/{sid or session_id} destroyed.")
     finally:
         if action_id:
             await mark_action_processed_async(async_tbl, action_id)
+
+
+
 
 async def agent_pause(db, async_tbl, action):
     action_id = action.get("action_id")
     try:
         payload = json.loads(action.get("payload") or "{}")
         agent_id = payload.get("agent_id") or action.get("agent_id")
-        if not agent_id:
-            print("agent_pause missing agent_id")
-            return
-        agent = JOKE_AGENTS.get(agent_id)
+        session_id = payload.get("session_id") or action.get("session_id")
+        sid, agent = _resolve_agent(agent_id=agent_id, session_id=session_id)
         if agent:
             agent.pause()
-            print(f"Paused agent {agent_id}")
+            await upsert_state_async(agent.agent_id, status="paused", context={"paused": True}, session_id=sid or session_id)
+            print(f"Paused agent {agent.agent_id}/{sid or session_id}")
         else:
-            print(f"Agent {agent_id} not found")
+            print(f"Agent not found for agent_id={agent_id}, session_id={session_id}")
     finally:
         if action_id:
             await mark_action_processed_async(async_tbl, action_id)
+
+
 
 async def agent_resume(db, async_tbl, action):
     action_id = action.get("action_id")
     try:
         payload = json.loads(action.get("payload") or "{}")
         agent_id = payload.get("agent_id") or action.get("agent_id")
-        if not agent_id:
-            print("agent_resume missing agent_id")
-            return
-        agent = JOKE_AGENTS.get(agent_id)
+        session_id = payload.get("session_id") or action.get("session_id")
+        sid, agent = _resolve_agent(agent_id=agent_id, session_id=session_id)
         if agent:
             agent.resume()
-            print(f"Resumed agent {agent_id}")
+            await upsert_state_async(agent.agent_id, status="running", context={"paused": False}, session_id=sid or session_id)
+            print(f"Resumed agent {agent.agent_id}/{sid or session_id}")
         else:
-            print(f"Agent {agent_id} not found")
+            print(f"Agent not found for agent_id={agent_id}, session_id={session_id}")
     finally:
         if action_id:
             await mark_action_processed_async(async_tbl, action_id)
 
 
 async def agent_interrupt(db, async_tbl, action):
-    # payload is expected to be a JSON string with agent_id and guidance
-    payload_raw = action.get("payload")
+    print("IN INITER")
+    action_id = action.get("action_id")
+    payload_raw = action.get("payload") or ""
     try:
         payload = json.loads(payload_raw)
-    except Exception:
-        print(f"Malformed payload: {payload_raw}")
-        return
-    
-    agent_id = payload["agent_id"]
-    guidance = payload.get("guidance")
-    agent = JOKE_AGENTS.get(agent_id)
-    if agent is not None:
-        await agent.interrupt(guidance)
-        print(f"Sent guidance to agent {agent_id}: {guidance}")
-    else:
-        print(f"Agent {agent_id} not found.")
-
-    # Mark as processed if action_id is present
-    action_id = action.get("action_id")
-    if action_id:
-        await mark_action_processed_async(async_tbl, action_id)
-
+        agent_id = payload.get("agent_id") or action.get("agent_id")
+        session_id = payload.get("session_id") or action.get("session_id")
+        guidance = payload.get("guidance")
+        print(agent_id, session_id, guidance)
+        sid, agent = _resolve_agent(agent_id=agent_id, session_id=session_id)
+        if agent is not None:
+            await agent.interrupt(guidance)
+            await upsert_state_async(agent.agent_id, status="running", context={"last_guidance": guidance}, session_id=sid or session_id)
+            print(f"Sent guidance to agent {agent.agent_id}/{sid or session_id}: {guidance}")
+        else:
+            print(f"Agent not found for agent_id={agent_id}, session_id={session_id}")
+    except Exception as e:
+        print(f"agent_interrupt payload error: {e}; raw={payload_raw!r}")
+    finally:
+        if action_id:
+            await mark_action_processed_async(async_tbl, action_id)
 
 
 
-# Action dispatcher mapping
+
+
+
+
 ACTION_HANDLERS = {
-    'create_agent': agent_create,
-    'agent_destroy': agent_destroy,
-    'agent_pause': agent_pause,
-    'agent_resume': agent_resume,
-    'agent_interrupt': agent_interrupt,
-    'environment_reload': environment_reload_handler,
-    # Add more
+'create_agent': agent_create,
+'agent_destroy': agent_destroy,
+'agent_pause': agent_pause,
+'agent_resume': agent_resume,
+'agent_interrupt': agent_interrupt,
+'environment_reload': environment_reload_handler,
 }
 
 
-
 IN_FLIGHT_ACTION_IDS = set()
+
 
 async def handle_actions(db, async_tbl, actions):
     for action in actions:
@@ -223,22 +391,31 @@ async def handle_actions(db, async_tbl, actions):
         if not handler:
             print(f"Unknown action type: {action}")
             continue
-
         IN_FLIGHT_ACTION_IDS.add(aid)
 
-        async def run_one():
+        async def run_one(aid=aid, action=action, handler=handler):
             try:
                 await handler(db, async_tbl, action)
+            except Exception as e:
+                import traceback
+                print(f"Action {aid} raised: {e}")
+                traceback.print_exc()
             finally:
                 IN_FLIGHT_ACTION_IDS.discard(aid)
         asyncio.create_task(run_one())
 
 
 
+async def poll_lancedb_for_actions(db, async_tbl):
+    await asyncio.sleep(15)
+    print("c")
+    async_tbl = await db.open_table(QUEUE_NAME)
 
+    result = await async_tbl.query().where("processed == False").to_pandas()
+    return result.to_dict(orient="records")
+    
 
-
-
+'''
 async def poll_lancedb_for_actions(db, async_tbl):
     
 
@@ -254,23 +431,9 @@ async def poll_lancedb_for_actions(db, async_tbl):
     return []
 
 poll_lancedb_for_actions.counter = 0
+'''
 
 
-
-class InterruptibleAgent(InterruptMixin, AgentBase):
-    async def run(self):
-        step = 0
-        print(f"Agent {self.agent_id} started!")
-        while step < 10:
-            await self.wait_if_paused()
-            guidance = await self.check_interrupt()
-            if guidance is not None:
-                print(f"Agent {self.agent_id} got guidance: {guidance}")
-                # Change behavior as needed
-            print(f"Agent {self.agent_id} working: {step}")
-            await asyncio.sleep(1)
-            step += 1
-        print(f"Agent {self.agent_id} finished!")
 
 
             
@@ -282,10 +445,14 @@ class InterruptibleAgent(InterruptMixin, AgentBase):
 import flask
 from flask_cors import CORS
 from routes.api_map import MAP_HTTP_FUNCS, handle_request_response
+from flask_socketio import SocketIO, emit, join_room, leave_room
 
-
-from flask_socketio import SocketIO, emit, disconnect, join_room, leave_room
+import threading, asyncio, time
 from flask import request
+
+from ws_bus import init as ws_init, room_for_run
+from store.sessions import get_last_step_for_session_id
+import agents  # your asyncio agent runner (agents.main, etc.)
 
 def configure_ws(socketio: SocketIO):    
     def request_response_wrapper(data):
@@ -300,19 +467,69 @@ def configure_http(app: flask.app.Flask):
             kwargs['methods'] = rest[0]
         app.add_url_rule(path, view_func=func, **kwargs)
 
-def create_app():
+def create_app_and_socket():
     app = flask.Flask(__name__)
     CORS(app, resources={r"/api/*": {"origins": "*"}})
-    socketio = SocketIO(app, cors_allowed_origins=["http://localhost:5173"])
+    # Use threading async_mode to avoid eventlet/gevent. It’s fine for dev and simple prod.
+    socketio = SocketIO(app, cors_allowed_origins=["http://localhost:5173", "http://127.0.0.1:5173"])
+    print("SocketIO async mode:", socketio.async_mode)  # should print 'eventlet'
+
+
+    # Initialize emitter hub
+    ws_init(socketio)
+
+    # Socket.IO: subscribe/unsubscribe to run updates
+    @socketio.on("subscribe_run")
+    def on_subscribe_run(data):
+        run_id = (data or {}).get("run_id") or ""
+        if not run_id:
+            emit("error", {"error": "missing run_id"})
+            return
+        join_room(room_for_run(run_id))
+        # Send an immediate snapshot if we can figure out session_id
+        try:
+            # run_id is "agent_id::session_id" per your Svelte code
+            parts = run_id.split("::", 1)
+            session_id = parts[1] if len(parts) == 2 else None
+            last_text = ""
+            if session_id:
+                last_text = get_last_step_for_session_id(session_id=session_id) or ""
+            emit("run_update", {
+                "run_id": run_id,
+                "last_text": last_text,
+                "timestamp": int(time.time() * 1000),
+            })
+        except Exception as e:
+            print(f"subscribe_run snapshot error: {e}")
+
+    @socketio.on("unsubscribe_run")
+    def on_unsubscribe_run(data):
+        run_id = (data or {}).get("run_id") or ""
+        if not run_id:
+            return
+        leave_room(room_for_run(run_id))
 
     configure_http(app)
     configure_ws(socketio=socketio)
-    
-    return app
+    return app, socketio
+
+def start_background_agents():
+# Run your asyncio agents loop in a dedicated thread
+# agents.main() is async, so run it in its own event loop.
+    def runner():
+        try:
+            asyncio.run(agents.main())
+        except Exception as e:
+            print(f"Agents main exited: {e}")
+    t = threading.Thread(target=runner, daemon=True)
+    t.start()
+
 
 if __name__ == "__main__":
-    app = create_app()
-    app.run(debug=True)
+    app, socketio = create_app_and_socket()
+    start_background_agents()
+    # Important: disable the reloader to avoid starting agents twice
+    socketio.run(app, host="0.0.0.0", port=5000, debug=True, use_reloader=False)
 
 
 === ./agent_core.py ===
@@ -436,6 +653,354 @@ async def environment_reload(action):
     print(f"Environment {action['env_id']} reloaded.")
     
 
+=== ./persona_agent.py ===
+from typing import Optional, Dict, Any, List
+
+from agent_core import PauseMixin, InterruptMixin
+from agent_loop import LoopingAgentBase, StepOutcome
+from store.messages import list_messages_since, append_message
+from datetime import datetime, timedelta
+
+class PersonaAgent(PauseMixin, InterruptMixin, LoopingAgentBase):
+    def __init__(
+        self,
+        agent_id: str,
+        session_id: str,
+        *,
+        conversation_id: str,
+        persona_config: dict,
+        loop_interval: float = 1.5,
+        cooldown_seconds: float = 2.0,
+        **kwargs
+    ):
+        self.conversation_id = conversation_id
+        self.persona_config = dict(persona_config or {})
+        self.last_seen_iso: Optional[str] = None
+        self.cooldown_seconds = cooldown_seconds
+        self._last_spoke_at: Optional[datetime] = None
+        self._force_tick = False
+        super().__init__(agent_id, session_id, loop_interval=loop_interval, **kwargs)
+
+    def initial_context(self) -> Optional[dict]:
+        return {
+            "agent_type": "PersonaAgent",
+            "conversation_id": self.conversation_id,
+            "persona": self.persona_config.get("name") or self.agent_id,
+        }
+
+    async def apply_guidance(self, g) -> Optional[dict]:
+        if not isinstance(g, dict):
+            return None
+        t = g.get("type")
+        if t == "set_tone":
+            tone = str(g.get("tone") or "").strip()
+            if tone:
+                self.persona_config["tone"] = tone
+                return {"tone": tone}
+        if t == "speak_now":
+            self._force_tick = True
+        if t == "set_cooldown":
+            try:
+                self.cooldown_seconds = float(g.get("seconds", self.cooldown_seconds))
+                return {"cooldown_seconds": self.cooldown_seconds}
+            except Exception:
+                pass
+        return None
+
+    def _can_speak_now(self) -> bool:
+        if self._last_spoke_at is None:
+            return True
+        return (datetime.now() - self._last_spoke_at) >= timedelta(seconds=self.cooldown_seconds)
+
+    async def _generate_reply(self, window: List[dict]) -> str:
+        # Minimal template; plug in your baml client/tool here
+        persona = self.persona_config.get("name") or self.agent_id
+        tone = self.persona_config.get("tone") or "default"
+        last_user = next((m["text"] for m in reversed(window) if m["role"] == "user"), window[-1]["text"])
+        return f"[{persona} | tone={tone}] {last_user}"
+
+    async def do_tick(self, step: int) -> StepOutcome:
+        msgs = list_messages_since(self.conversation_id, self.last_seen_iso, limit=50)
+        if not msgs:
+            return StepOutcome(status="info", text=None, state={"idle": True, "conversation_id": self.conversation_id})
+
+        self.last_seen_iso = msgs[-1]["created_at"]
+        last = msgs[-1]
+        if last.get("author_id") == self.agent_id:
+            return StepOutcome(status="info", text=None, state={"seen_self": True, "conversation_id": self.conversation_id})
+
+        if not self._can_speak_now():
+            return StepOutcome(status="info", text=None, state={"cooldown": True, "conversation_id": self.conversation_id})
+
+        # Simple activation: reply if last message is user or another agent
+        window = msgs[-10:]  # small recent window
+        reply = await self._generate_reply(window)
+        append_message(self.conversation_id, self.agent_id, "agent", reply, meta={"session_id": self.session_id})
+        self._last_spoke_at = datetime.now()
+
+        return StepOutcome(
+            status="ok",
+            text=reply,
+            state={"conversation_id": self.conversation_id, "spoke": True, "tone": self.persona_config.get("tone")}
+        )
+
+=== ./agent_loop.py ===
+import asyncio
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any, Awaitable, Callable, Optional, Dict, Union
+
+from agent_core import AgentBase, StopMixin
+
+GuidanceInput = Union[str, dict, list, None]
+GuidanceDict = Optional[dict]
+
+@dataclass
+class StepOutcome:
+# Default status is "ok"; use "error" or "info" as needed
+    status: str = "ok"
+    text: Optional[str] = None
+    data: Optional[Union[dict, list, str]] = None
+    state: Optional[Union[dict, list]] = None  # JSON-encoded by store layer
+    notes: Optional[str] = None
+    latency_ms: Optional[int] = None
+    error: Optional[str] = None
+    guidance: Optional[dict] = None  # normalized guidance affecting this tick
+
+class LoopingAgentBase(AgentBase, StopMixin):
+    def __init__ (
+        self,
+        agent_id: str,
+        session_id: str,
+        *,
+        state_updater: Optional[Callable[..., Awaitable[None]]] = None,
+        steps_appender: Optional[Callable[..., Awaitable[None]]] = None,
+        loop_interval: float = 3.0,
+        guidance_interpreter: Optional[Callable[[GuidanceInput], Awaitable[GuidanceDict]]] = None,
+        persist_guidance_raw: bool = True,
+        persist_guidance_normalized: bool = True,
+    ):
+        
+        super().__init__(agent_id)
+        self.session_id = session_id
+        self._state_updater = state_updater
+        self._steps_appender = steps_appender
+        self.loop_interval = loop_interval
+        self.guidance_interpreter = guidance_interpreter
+        self.persist_guidance_raw = persist_guidance_raw
+        self.persist_guidance_normalized = persist_guidance_normalized
+
+        # Internal
+        self._task: Optional[asyncio.Task] = None
+        self._context: Dict[str, Any] = dict(self.initial_context() or {})
+        # Ensure agent_type in context by default
+        self._context.setdefault("agent_type", self.__class__.__name__)
+        self.current_subject = None
+        # Paused flag is computed per-tick if PauseMixin is present
+
+    # ---------- Overridables (subclasses implement minimal logic) ----------
+    def initial_context(self) -> Optional[dict]:
+        return {"agent_type": self.__class__.__name__}
+
+    async def on_start(self) -> Optional[dict]:
+        return None
+
+    async def on_stop(self) -> None:
+        return None
+
+    async def do_tick(self, step: int) -> StepOutcome:
+        raise NotImplementedError
+
+    async def apply_guidance(self, normalized_guidance: GuidanceInput) -> Optional[dict]:
+        # Subclasses may update internal state based on guidance and return context delta
+        return None
+
+    async def interpret_guidance(self, raw: GuidanceInput) -> GuidanceDict:
+        # If a custom interpreter is provided, use it; else minimal normalization
+        if self.guidance_interpreter:
+            try:
+                return await self.guidance_interpreter(raw)
+            except Exception:
+                # Fall back to naive behavior on interpreter failure
+                pass
+        if isinstance(raw, dict):
+            return raw
+        if raw is None:
+            return None
+        # Put free-form text under a conventional key
+        return {"_raw_text": str(raw)}
+
+    def should_continue_on_error(self, exc: Exception) -> bool:
+        return True  # default: keep going
+
+    # ---------- Helpers ----------
+    async def _state_update(self, status=None, iteration=None, result=None, context=None, history=None):
+        if not self._state_updater:
+            return
+        await self._state_updater(
+            agent_id=self.agent_id,
+            status=status,
+            iteration=iteration,
+            result=result,
+            context=context,
+            history=history,
+        )
+
+    def _paused_flag(self) -> bool:
+        # Duck-typed PauseMixin
+        try:
+            return bool(getattr(self, "is_paused")())
+        except Exception:
+            return False
+
+    async def _wait_if_paused(self):
+        # Duck-typed PauseMixin
+        w = getattr(self, "wait_if_paused", None)
+        if callable(w):
+            await w()
+
+    async def _check_interrupt(self) -> GuidanceInput:
+        # Duck-typed InterruptMixin
+        c = getattr(self, "check_interrupt", None)
+        if callable(c):
+            return await c()
+        return None
+
+    def _merge_context(self, delta: Optional[dict]):
+        if delta and isinstance(delta, dict):
+            self._context.update(delta)
+
+    def _context_snapshot(self) -> dict:
+        # Always include paused for transparency when available
+        snap = dict(self._context)
+        snap["paused"] = self._paused_flag()
+        return snap
+
+    # ---------- Main run loop ----------
+    async def run(self):
+        step = 0
+        # starting
+        await self._state_update(
+            status="starting",
+            iteration=step,
+            context=self._context_snapshot(),
+        )
+        start_delta = await self.on_start() or {}
+        self._merge_context(start_delta)
+        await self._state_update(
+            status="running",
+            iteration=step,
+            context=self._context_snapshot(),
+        )
+        print(f"{self.__class__.__name__} {self.agent_id} started (session {self.session_id}).")
+
+        while True:
+            if self.should_stop():
+                print(f"{self.__class__.__name__} {self.agent_id}: stopping.")
+                break
+
+            await self._wait_if_paused()
+
+            # Allow stop after pause
+            if self.should_stop():
+                print(f"{self.__class__.__name__} {self.agent_id}: stopping after pause.")
+                break
+
+            # Handle guidance (if InterruptMixin present)
+            guidance_raw = await self._check_interrupt()
+            guidance_norm = None
+            context_delta_from_guidance = None
+            guidance_to_persist = None
+
+            if guidance_raw is not None:
+                try:
+                    guidance_norm = await self.interpret_guidance(guidance_raw)
+                    context_delta_from_guidance = await self.apply_guidance(guidance_norm if guidance_norm is not None else guidance_raw)
+                    self._merge_context(context_delta_from_guidance)
+                except Exception as ge:
+                    # Guidance processing error; record as info step later
+                    print(f"{self.__class__.__name__} {self.agent_id}: guidance error: {ge}")
+
+                # Build guidance object to persist this tick (if any)
+                g_obj: Dict[str, Any] = {}
+                if self.persist_guidance_raw:
+                    g_obj["raw"] = guidance_raw
+                if self.persist_guidance_normalized:
+                    g_obj["normalized"] = guidance_norm
+                guidance_to_persist = g_obj if g_obj else None
+
+            # Execute one tick
+            outcome = StepOutcome()
+
+            
+            try:
+                outcome = await self.do_tick(step)
+                if not isinstance(outcome, StepOutcome):
+                    # Allow simple returns
+                    outcome = StepOutcome(text=str(outcome))
+            except Exception as e:
+                outcome = StepOutcome(
+                    status="error",
+                    error=str(e),
+                    text=None,
+                    data=None,
+                    state=None,
+                )
+                print(f"{self.__class__.__name__} {self.agent_id} tick error @ step {step}: {e}")
+                if not self.should_continue_on_error(e):
+                    # Record and then stop
+                    await self._append_step(step, outcome, guidance_to_persist)
+                    await self._state_update(
+                        status="error",
+                        iteration=step,
+                        result=outcome.error,
+                        context=self._context_snapshot(),
+                    )
+                    break
+
+            # If guidance influenced this tick and outcome.guidance is empty, attach it
+            if guidance_to_persist and outcome.guidance is None:
+                outcome.guidance = guidance_to_persist
+
+            # Persist step and state
+            await self._append_step(step, outcome, outcome.guidance)
+            await self._state_update(
+                status="running",
+                iteration=step,
+                result=outcome.text if outcome.text is not None else outcome.error,
+                context=self._context_snapshot(),
+            )
+
+            await asyncio.sleep(self.loop_interval)
+            step += 1
+
+        try:
+            await self.on_stop()
+        finally:
+            await self._state_update(
+                status="stopped",
+                context={"ended_at": datetime.now().isoformat(), **self._context_snapshot()},
+            )
+
+    async def _append_step(self, step: int, outcome: StepOutcome, guidance: Optional[dict]):
+        if not self._steps_appender:
+            return
+        try:
+            await self._steps_appender(
+                iteration=step,
+                status=outcome.status,
+                text=outcome.text,
+                data=outcome.data,
+                state=outcome.state,
+                guidance=guidance,
+                notes=outcome.notes,
+                latency_ms=outcome.latency_ms,
+                error=outcome.error,
+            )
+        except Exception as e:
+            print(f"{self.__class__.__name__} {self.agent_id}: steps_appender error: {e}")
+
+
 === ./metadata_registry_tests.py ===
 import unittest
 from metadata_registry import get_all_schema_names
@@ -537,6 +1102,43 @@ class MetadataTestCases(unittest.TestCase) :
 unittest.main()
 
 
+=== ./ws_bus.py ===
+socketio = None
+
+def init(sio):
+    global socketio
+    socketio = sio
+
+def room_for_run(run_id: str) -> str:
+    return f"run::{run_id}"
+
+def emit_run_update(run_id: str, payload: dict):
+# safe no-op if socketio not initialized yet
+    if socketio is None:
+        return
+    try:
+        print(f"now emiting: {payload}")
+        socketio.emit("run_update", payload, to=room_for_run(run_id))
+    except Exception as e:
+        print(f"emit_run_update error for {run_id}: {e}")
+
+
+
+=== ./baml_test2.py ===
+from baml_client.async_client import b
+from baml_client.types import StepFrameIn, StepFrameOut
+
+async def tell_a_joke_v2(subject="foot", guidance="") -> StepFrameOut:
+    in_arg = StepFrameIn(context=subject, guidance=guidance )
+    return await b.TellAJokeV2(in_arg=in_arg)
+
+
+
+
+
+
+
+
 === ./queue_imp.py ===
 import lancedb
 import pyarrow as pa
@@ -545,33 +1147,14 @@ from datetime import datetime
 import uuid
 import json
 
+from store.schemas import AGENTS_URI, AGENTS_CONFIG_NAME, QUEUE_NAME
+from store.sessions import get_agent_id_for_session_id
+
 # --------------------
 # Database Setup
 # --------------------
-AGENTS_URI = "data/agents"
+
 AGENTS_DB = lancedb.connect(AGENTS_URI)
-
-AGENTS_CONFIG_NAME = "agents_config"
-QUEUE_NAME = "queue"
-
-AGENTS_CONFIG_SCHEMA = pa.schema([
-    pa.field("agent_id", pa.string(), nullable=False),
-    pa.field("agent_type", pa.string(), nullable=False),
-    pa.field("agent_description", pa.string(), nullable=True),
-    pa.field("agents_metadata", pa.string(), nullable=True),
-])
-
-QUEUE_SCHEMA = pa.schema([
-    pa.field("action_id", pa.string(), nullable=False),
-    pa.field("type", pa.string(), nullable=False),
-    pa.field("created_at", pa.string(), nullable=False),
-    pa.field("actor", pa.string(), nullable=False),
-    pa.field("processed", pa.bool_(), nullable=False),
-    pa.field("urgency", pa.string()),
-    pa.field("description", pa.string()),
-    pa.field("payload", pa.string()),
-    pa.field("metadata", pa.string()),
-])
 
 
 # --------------------
@@ -636,6 +1219,7 @@ def create_action(
     processed: bool = False,
     action_id: str = None,
     created_at: str = None,
+    session_id: str | None = None
 ):
     queue_tbl = AGENTS_DB.open_table(QUEUE_NAME)
     record = {
@@ -648,6 +1232,7 @@ def create_action(
         "description": description,
         "payload": payload,
         "metadata": metadata,
+        "session_id": session_id,
     }
     queue_tbl.add(data=[record], mode="append")
     print(f"Action '{action_type}' for actor '{actor}' queued.")
@@ -665,48 +1250,75 @@ def delete_all_actions():
 # --------------------
 # Helper: Agent action creators
 # --------------------
-def agent_create(agent_id, actor, initial_subject="foot"):
-    payload = json.dumps({
-        "agent_id": agent_id,
-        "initial_subject": initial_subject
-    })
-    create_action(
-        action_type="create_agent",
-        actor=actor,
-        payload=payload
-    )
-    print(f"CreateAgent action for {agent_id} queued with initial_subject: {initial_subject}")
+def agent_create(agent_id, actor, initial_subject="foot", session_id: str | None = None):
+    sid = session_id or str(uuid.uuid4())
+    payload = json.dumps({ "agent_id": agent_id, "initial_subject": initial_subject, "session_id": sid})
+    create_action( action_type="create_agent", actor=actor, payload=payload, session_id=sid)
+    return sid
 
-def agent_interrupt(agent_id, actor, guidance: dict):
-    payload = json.dumps({
-        "agent_id": agent_id,
-        "guidance": guidance
-    })
-    create_action(
-        action_type="agent_interrupt",
-        actor=actor,
-        payload=payload
-    )
-    print(f"Interrupt action for {agent_id} queued with guidance: {guidance}")
-
-def agent_destroy_action(agent_id, actor, reason=None):
-    payload = json.dumps({"agent_id": agent_id, "reason": reason})
-    create_action(action_type="agent_destroy", actor=actor, payload=payload)
+def agent_destroy_action(agent_id, actor, reason=None,  session_id: str | None = None):
+    payload = json.dumps({"agent_id": agent_id, "reason": reason, "session_id": session_id})
+    create_action(action_type="agent_destroy", actor=actor, payload=payload, session_id=session_id)
+    return("ok")
 
 
-def agent_pause_action(agent_id, actor, reason=None):
-    payload = json.dumps({"agent_id": agent_id, "reason": reason})
-    create_action(action_type="agent_pause", actor=actor, payload=payload)
+def stop_agent(session_id, reason=None):
+    agent_id = get_agent_id_for_session_id(session_id=session_id)
+    if agent_id:
+        agent_destroy_action(agent_id=agent_id, actor="user", reason=reason, session_id=session_id)
 
-def agent_resume_action(agent_id, actor):
-    payload = json.dumps({"agent_id": agent_id})
-    create_action(action_type="agent_resume", actor=actor, payload=payload)
+
+
+def agent_interrupt_action(agent_id, session_id, actor="user", guidance: dict = {} ):
+    payload = json.dumps({ "agent_id": agent_id, "session_id": session_id, "guidance": guidance})
+    create_action( action_type="agent_interrupt", actor=actor, payload=payload,session_id=session_id)
+    
+    return("ok")
+
+
+def agent_pause_action(agent_id, session_id: str , reason="user initiated", actor="user"):
+    payload = json.dumps({"agent_id": agent_id, "reason": reason, "session_id": session_id})
+    create_action(action_type="agent_pause", actor=actor, payload=payload, session_id=session_id)
+    return("ok")
+
+def agent_resume_action(agent_id, session_id: str , actor="user", ):
+    payload = json.dumps({"agent_id": agent_id, "session_id": session_id})
+    create_action(action_type="agent_resume", actor=actor, payload=payload, session_id=session_id)
+    return("ok")
 
 # --------------------
 # Async Helper
 # --------------------
+
 async def mark_action_processed_async(async_tbl, action_id: str):
     await async_tbl.update(where=f'action_id == "{action_id}"', updates={"processed": True})
+
+
+
+
+
+
+
+
+
+
+from store.conversations import create_conversation as _create_conversation
+
+def create_conversation(title: str | None = None) -> str:
+    return _create_conversation(title)
+
+def persona_agent_create(agent_id, actor, conversation_id, persona_config: dict, session_id: str | None = None):
+    sid = session_id or str(uuid.uuid4())
+    payload = json.dumps({
+        "agent_id": agent_id,
+        "agent_type": "PersonaAgent",
+        "conversation_id": conversation_id,
+        "persona_config": persona_config,
+        "session_id": sid,
+        "loop_interval": 1.5
+    })
+    create_action(action_type="create_agent", actor=actor, payload=payload, session_id=sid)
+    return sid
 
 # --------------------
 # Main/test (remove or modify as needed)
@@ -1091,6 +1703,20 @@ if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5000, debug=True)
 
 
+=== ./bamp3.py ===
+from baml_client.async_client import b
+from baml_client.types import MonikerStepFrameIn, MonikerStepFrameOut, MonikerGuidance, MonikerState
+
+
+async def tell_a_joke(subject="foot") -> str:
+    initial_state = MonikerState()
+    guidance = MonikerGuidance(topic="dogs")
+    a = MonikerStepFrameIn(step="0", state=initial_state,guidance=guidance)
+    joke_text = f"tell a joke about john on the subject of {subject}"
+    return await  b.TellAJoke(a, joke_text)
+
+
+
 === ./metadata_registry.py ===
 
 def get_all_schema_names(data):
@@ -1217,13 +1843,249 @@ async def main():
 if __name__ == "__main__":
     asyncio.run(main())
 
+=== ./scratch.py ===
+from dataclasses import dataclass, field
+from typing import Optional, Any, Dict
+
+
+@dataclass
+class StepFrame:
+    
+    # Input (loop -> agent)
+    iteration: int
+    context: Dict[str, Any] = field(default_factory=dict)      # snapshot from loop
+    guidance: Optional[Dict[str, Any]] = None                  # latest normalized guidance
+
+    # Output (agent -> loop)
+    status: str = "ok"                                         # "ok" | "error" | "info"
+    control: str = "continue"                                  # "continue" | "pause" | "stop" | "done"
+    
+    reason: Optional[str] = None                                # e.g., "need_user_input", "complete"
+    hint: Optional[Dict[str, Any]] = None                       # e.g., {"resume_when": "user_uploaded_csv"}
+
+    
+    text: Optional[str] = None
+    payload: Any = None
+    context_delta: Optional[Dict[str, Any]] = None
+    
+    
+
 === ./baml_test.py ===
 from baml_client.async_client import b
+
 
 async def tell_a_joke(subject="foot") -> str:
     return await b.JokeTeller(f"tell a joke about john using subject {subject}")
 
 
+
+
+=== ./store/agent_steps.py ===
+import lancedb, uuid, json
+from datetime import datetime
+from .schemas import AGENTS_URI, AGENT_STEPS_NAME
+import json as _json
+from ws_bus import emit_run_update
+
+
+AGENTS_DB = lancedb.connect(AGENTS_URI)
+JSON_FIELDS = ("data", "state", "guidance")
+
+
+def _safe_json_loads(s, default=None):
+    if s is None:
+        return default
+    if isinstance(s, (dict, list)):
+        return s
+    try:
+        return json.loads(s)
+    except Exception:
+        return default if default is not None else s
+
+
+
+
+
+def _to_json_str(obj):
+    if obj is None:
+        return None
+    if isinstance(obj, (dict, list)):
+        return _json.dumps(obj)
+    return str(obj)
+
+
+
+
+
+
+def _build_where(
+*,
+    session_id: str | None,
+    agent_id: str | None,
+    min_iteration: int | None,
+    max_iteration: int | None,
+    since_created_at: str | None,
+    status: str | None,
+    ):
+        parts = []
+        if session_id:
+            parts.append(f"session_id == '{session_id}'")
+        if agent_id:
+            parts.append(f"agent_id == '{agent_id}'")
+        if min_iteration is not None:
+            parts.append(f"iteration >= {int(min_iteration)}")
+        if max_iteration is not None:
+            parts.append(f"iteration <= {int(max_iteration)}")
+        if since_created_at:
+            parts.append(f"created_at > '{since_created_at}'")
+        if status:
+            parts.append(f"status == '{status}'")
+        return " and ".join(parts) if parts else None
+
+def _normalize_rows(df):
+    if df is None or df.empty:
+        return []
+    df = df.copy()
+    # Ensure integer types where expected
+    if "iteration" in df.columns:
+        df["iteration"] = df["iteration"].astype("Int64")
+    if "latency_ms" in df.columns:
+        df["latency_ms"] = df["latency_ms"].astype("Int64")
+    rows = df.to_dict(orient="records")
+    # JSON-decode selected fields
+    out = []
+    for r in rows:
+        for f in JSON_FIELDS:
+            if f in r:
+                r[f] = _safe_json_loads(r.get(f))
+        out.append(r)
+    return out
+
+def list_agent_steps(
+*,
+session_id: str | None = None,
+agent_id: str | None = None,
+min_iteration: int | None = None,
+max_iteration: int | None = None,
+since_created_at: str | None = None,
+status: str | None = None,
+limit: int = 100,
+offset: int = 0,
+order: str = "asc",  # "asc" or "desc" by iteration
+):
+    """
+    Returns a list of agent step rows filtered by the provided criteria.
+    Ordering is by iteration, ascending by default.
+    """
+    tbl = AGENTS_DB.open_table(AGENT_STEPS_NAME)
+    where = _build_where(
+    session_id=session_id,
+    agent_id=agent_id,
+    min_iteration=min_iteration,
+    max_iteration=max_iteration,
+    since_created_at=since_created_at,
+    status=status,
+    )
+    # LanceDB doesn't support offset directly; fetch a window and slice in pandas.
+    fetch_n = max(limit + offset, limit)
+    q = tbl.search()
+    if where:
+        q = q.where(where)
+        # Fetch to pandas then sort and slice
+        df = q.limit(fetch_n).to_pandas()
+        if df is None or df.empty:
+            return []
+    # Order by iteration; created_at is a tiebreaker
+        ascending = (order.lower() != "desc")
+        df = df.sort_values(by=["iteration", "created_at"], ascending=[ascending, ascending])
+        if offset:
+            df = df.iloc[offset:]
+        if limit:
+            df = df.iloc[:limit]
+        return _normalize_rows(df)
+
+def list_agent_steps_since_iteration(
+    *,
+    session_id: str,
+    after_iteration: int,
+    limit: int = 500,
+    order: str = "asc",
+    ):
+    """
+    Convenience: get steps strictly after the given iteration for a session.
+    """
+    return list_agent_steps(
+    session_id=session_id,
+    min_iteration=after_iteration + 1,
+    limit=limit,
+    order=order,
+    )
+
+def list_agent_steps_latest(
+    *,
+    session_id: str | None = None,
+    agent_id: str | None = None,
+    limit: int = 20,
+):
+    """
+    Convenience: latest N steps for a session or agent.
+    """
+    return list_agent_steps(
+    session_id=session_id,
+    agent_id=agent_id,
+    limit=limit,
+    order="desc",
+    )
+
+
+
+
+
+def append_agent_step(
+    agent_id: str,
+    iteration: int,
+    *,
+    session_id: str | None = None,
+    step_token: str | None = None,
+    next_step_token: str | None = None,
+    status: str = "ok",
+    text: str | None = None,
+    data: dict | list | None = None,
+    state: dict | list | None = None,
+    guidance: dict | list | None = None,
+    notes: str | None = None,
+    latency_ms: int | None = None,
+    error: str | None = None,
+):
+    tbl = AGENTS_DB.open_table(AGENT_STEPS_NAME)
+    rec = {
+    "id": str(uuid.uuid4()),
+    "created_at": datetime.now().isoformat(),
+    "agent_id": agent_id,
+    "session_id": session_id,
+    "iteration": iteration,
+    "step_token": step_token,
+    "next_step_token": next_step_token,
+    "status": status,
+    "text": text,
+    "data": _to_json_str(data),
+    "state": _to_json_str(state),
+    "guidance": _to_json_str(guidance),
+    "notes": notes,
+    "latency_ms": latency_ms,
+    "error": error,
+    }
+    tbl.add([rec], mode="append")
+
+    # Notify subscribed UI clients
+    run_id = f"{agent_id}::{session_id or ''}"
+    payload = {
+        "run_id": run_id,
+        "last_text": text,
+        "timestamp": rec["created_at"],
+    }
+    print(f"now emitting: {payload}")
+    emit_run_update(run_id, payload)
 
 
 === ./store/agent_config.py ===
@@ -1283,6 +2145,14 @@ def list_agent_configs():
 if __name__ == "__main__":
     create_agent_config("agent1", "JokeAgent", "Tells jokes", {"subject": "python"})
     list_agent_configs()
+
+
+=== ./store/steps_async.py ===
+import asyncio
+from .agent_steps import append_agent_step as _append
+
+async def append_step_async(agent_id: str, iteration: int, **fields):
+    return await asyncio.to_thread(_append, agent_id, iteration, **fields)
 
 
 === ./store/action_queue.py ===
@@ -1348,15 +2218,26 @@ import lancedb
 import pyarrow as pa
 from datetime import datetime
 import json
+import pandas as pd
 
-from schemas import AGENT_STATE_NAME, AGENTS_URI
+from .schemas import AGENT_STATE_NAME, AGENTS_URI
 AGENTS_DB = lancedb.connect(AGENTS_URI)
 
 
-def upsert_agent_state(agent_id, status, iteration=None, result=None, context=None, history=None):
+def _safe_json_loads(s, *, default_if_fail=None):
+    if s is None:
+        return default_if_fail
+    if isinstance(s, (dict, list)):
+        return s
+    try:
+        return json.loads(s)
+    except Exception:
+        return default_if_fail if default_if_fail is not None else s
+
+def upsert_agent_state(agent_id, status,*, iteration=None, result=None, context=None, history=None,session_id: str | None = None,):
     tbl = AGENTS_DB.open_table(AGENT_STATE_NAME)
     now = datetime.now().isoformat()
-    rec = {
+    updates = {
         "agent_id": agent_id,
         "status": status,
         "iteration": iteration,
@@ -1365,37 +2246,311 @@ def upsert_agent_state(agent_id, status, iteration=None, result=None, context=No
         "history": json.dumps(history) if history else None,
         "context": json.dumps(context) if context else None,
     }
-    tbl.add(data=[rec], mode="overwrite")
-    print(f"Agent {agent_id} state = {status}, iter {iteration}, saved at {now}")
+    
+    where = f"agent_id == '{agent_id}'"
+    if session_id is not None:
+        where += f" and session_id == '{session_id}'"
+    else:
+        where += " and session_id IS NULL"
 
-def get_agent_state(agent_id):
+    try:
+        count = tbl.update(where=where, updates=updates)
+    except Exception:
+        count = 0
+
+    if not count:
+        rec = {
+            "agent_id": agent_id,
+            "session_id": session_id,
+            "status": status,
+            "iteration": int(iteration) if iteration is not None else None,
+            "result": json.dumps(result) if isinstance(result, (dict, list)) else result,
+            "last_updated": now,
+            "history": json.dumps(history) if history is not None else None,
+            "context": json.dumps(context) if context is not None else None,
+        }
+        tbl.add(data=[rec], mode="append")
+    print(f"Agent {agent_id} session={session_id} state={status} iter={iteration} @ {now}")
+
+def get_agent_state(agent_id, session_id: str | None = None):
     tbl = AGENTS_DB.open_table(AGENT_STATE_NAME)
     df = tbl.to_pandas().query(f"agent_id == '{agent_id}'")
     if df.empty:
         return None
-    row = df.iloc[0]
+    if session_id is not None and "session_id" in df.columns:
+        sdf = df.query(f"agent_id == '{agent_id}' and session_id == '{session_id}'")
+        if sdf.empty:
+            return None
+        row = sdf.sort_values("last_updated").iloc[-1]
+    else:
+        # legacy fallback: most recent row by agent_id (session_id may be null or absent)
+        sdf = df.query(f"agent_id == '{agent_id}'")
+        if sdf.empty:
+            return None
+        # sort by last_updated if present
+        if "last_updated" in sdf.columns:
+            try:
+                sdf["last_updated_dt"] = pd.to_datetime(sdf["last_updated"], errors="coerce")
+                sdf = sdf.sort_values("last_updated_dt")
+            except Exception:
+                pass
+        row = sdf.iloc[-1]
+
     return {
         "agent_id": row.agent_id,
+        "session_id": getattr(row, "session_id", None) if hasattr(row, "session_id") else None,
         "status": row.status,
         "iteration": row.iteration,
-        "result": json.loads(row.result) if row.result else None,
+        "result": _safe_json_loads(getattr(row, "result", None), default_if_fail=getattr(row, "result", None)),
         "last_updated": row.last_updated,
-        "history": json.loads(row.history) if row.history else [],
-        "context": json.loads(row.context) if row.context else {}
+        "history": _safe_json_loads(getattr(row, "history", None), default_if_fail=[]),
+        "context": _safe_json_loads(getattr(row, "context", None), default_if_fail={}),
     }
+
 
 def list_agent_states():
     tbl = AGENTS_DB.open_table(AGENT_STATE_NAME)
     df = tbl.to_pandas()
     if df.empty:
         return []
-    return [get_agent_state(row.agent_id) for _, row in df.iterrows()]
+    return df
+
+
+
+=== ./store/sessions.py ===
+import lancedb
+import json
+import pandas as pd
+from datetime import datetime
+
+from .schemas import AGENTS_URI, AGENT_STATE_NAME
+from .schemas import AGENT_STEPS_NAME  # fallback if agent_state lacks session_id
+
+AGENTS_DB = lancedb.connect(AGENTS_URI)
+
+ACTIVE_STATUSES = {"starting", "running", "paused", "stopping"}
+
+def _safe_json_loads(s, default=None):
+    if s is None:
+        return default
+    if isinstance(s, (dict, list)):
+        return s
+    try:
+        return json.loads(s)
+    except Exception:
+        return default if default is not None else s
+
+def _has_column(df: pd.DataFrame, col: str) -> bool:
+    return df is not None and not df.empty and (col in df.columns)
+
+def list_sessions_for_agent(
+    agent_id: str,
+    *,
+    active_only: bool = False,
+    limit: int = 100,
+    offset: int = 0,
+    order: str = "desc",  # by last_updated
+):
+    """
+    Return distinct sessions for an agent with a latest snapshot.
+    Prefers agent_state (one row per session); falls back to agent_steps if needed.
+    """
+    # Try from agent_state (preferred)
+    try:
+        #print(agent_id)
+        state_tbl = AGENTS_DB.open_table(AGENT_STATE_NAME)
+        df = state_tbl.search().where(f"agent_id == '{agent_id}'").to_pandas()
+        #print(df)
+    except Exception as e:
+        print(e)
+        df = pd.DataFrame()
+
+    if not df.empty and _has_column(df, "session_id"):
+        # Keep latest row per session_id by last_updated (string ISO)
+        df["last_updated"] = pd.to_datetime(df["last_updated"], errors="coerce")
+        df = df.sort_values(by=["last_updated"], ascending=True)
+        latest = df.drop_duplicates(subset=["session_id"], keep="last")
+        if active_only and "status" in latest.columns:
+            latest = latest[latest["status"].isin(ACTIVE_STATUSES)]
+
+        # Order and paginate
+        ascending = (order.lower() != "desc")
+        latest = latest.sort_values(by=["last_updated"], ascending=ascending)
+
+        if offset:
+            latest = latest.iloc[offset:]
+        if limit:
+            latest = latest.iloc[:limit]
+
+        rows = []
+        for _, r in latest.iterrows():
+            rows.append({
+                "agent_id": r.get("agent_id"),
+                "session_id": r.get("session_id"),
+                "status": r.get("status"),
+                "iteration": int(r.get("iteration")) if pd.notna(r.get("iteration")) else None,
+                "last_updated": r.get("last_updated").isoformat() if pd.notna(r.get("last_updated")) else None,
+                "result": _safe_json_loads(r.get("result")),
+                "context": _safe_json_loads(r.get("context"), default={}),
+            })
+        return rows
+
+    # Fallback: derive sessions from agent_steps (distinct session_id)
+    try:
+        steps_tbl = AGENTS_DB.open_table(AGENT_STEPS_NAME)
+        sdf = steps_tbl.query().where(f"agent_id == '{agent_id}'").to_pandas()
+    except Exception:
+        sdf = pd.DataFrame()
+
+    if sdf.empty or "session_id" not in sdf.columns:
+        # No data to infer sessions
+        return []
+
+    # Group by session and compute aggregates for a summary row
+    sdf["created_at"] = pd.to_datetime(sdf["created_at"], errors="coerce")
+    agg = sdf.groupby("session_id").agg(
+        last_updated=("created_at", "max"),
+        max_iteration=("iteration", "max"),
+    ).reset_index()
+
+    # We don’t have status in steps; mark unknown unless you also write status events into steps
+    agg["status"] = "unknown"
+
+    ascending = (order.lower() != "desc")
+    agg = agg.sort_values(by=["last_updated"], ascending=ascending)
+
+    if offset:
+        agg = agg.iloc[offset:]
+    if limit:
+        agg = agg.iloc[:limit]
+
+    rows = []
+    for _, r in agg.iterrows():
+        rows.append({
+            "agent_id": agent_id,
+            "session_id": r.get("session_id"),
+            "status": r.get("status"),
+            "iteration": int(r.get("max_iteration")) if pd.notna(r.get("max_iteration")) else None,
+            "last_updated": r.get("last_updated").isoformat() if pd.notna(r.get("last_updated")) else None,
+        })
+    return rows
+
+def get_agent_id_for_session_id(session_id:str) -> str|None:
+
+    try:
+        #print(agent_id)
+        state_tbl = AGENTS_DB.open_table(AGENT_STATE_NAME)
+        df = state_tbl.search().where(f"session_id == '{session_id}'").to_pandas()
+        if len(df) > 0:
+            return df.iloc[0].agent_id
+        else: 
+            return None        
+    except Exception as e:
+        return None        
+    
+
+def get_last_step_for_session_id(session_id): 
+    AGENTS_DB = lancedb.connect(AGENTS_URI)
+
+    agent_id = get_agent_id_for_session_id(session_id=session_id)
+
+    try:
+        steps_tbl = AGENTS_DB.open_table(AGENT_STEPS_NAME)
+        sdf = steps_tbl.search().where(f"agent_id == '{agent_id}' AND session_id == '{session_id}'").to_pandas()
+        
+    except Exception:
+        sdf = pd.DataFrame()
+
+    if len(sdf) > 0:
+        df_sorted = sdf.sort_values(by="iteration", ascending=False)
+        return df_sorted.iloc[0].text
+    return ""
+
+
+=== ./store/messages.py ===
+import lancedb, uuid, json
+from datetime import datetime
+import pandas as pd
+from .schemas import AGENTS_URI, MESSAGES_NAME
+DB = lancedb.connect(AGENTS_URI)
+
+def append_message(conversation_id: str, author_id: str, role: str, text: str, reply_to: str | None = None, meta: dict | None = None) -> str:
+    mid = str(uuid.uuid4())
+    DB.open_table(MESSAGES_NAME).add([{
+        "message_id": mid,
+        "conversation_id": conversation_id,
+        "author_id": author_id,
+        "role": role,
+        "text": text,
+        "created_at": datetime.now().isoformat(),
+        "reply_to": reply_to,
+        "meta": json.dumps(meta) if meta else None,
+    }])
+    return mid
+
+def list_messages_since(conversation_id: str, since_iso: str | None, limit: int = 50) -> list[dict]:
+    tbl = DB.open_table(MESSAGES_NAME)
+    q = tbl.search().where(f"conversation_id == '{conversation_id}'")
+    df = q.to_pandas()
+    if df is None or df.empty:
+        return []
+    df["created_at_dt"] = pd.to_datetime(df["created_at"], errors="coerce")
+    if since_iso:
+        cutoff = pd.to_datetime(since_iso, errors="coerce")
+        df = df[df["created_at_dt"] > cutoff]
+    df = df.sort_values("created_at_dt").iloc[:limit]
+    return df.drop(columns=["created_at_dt"]).to_dict(orient="records")
+
+def latest_message(conversation_id: str) -> dict | None:
+    tbl = DB.open_table(MESSAGES_NAME)
+    df = tbl.search().where(f"conversation_id == '{conversation_id}'").to_pandas()
+    if df is None or df.empty: return None
+    df["created_at_dt"] = pd.to_datetime(df["created_at"], errors="coerce")
+    row = df.sort_values("created_at_dt").iloc[-1]
+    return row.to_dict()
+
 
 === ./store/schemas.py ===
 
 import pyarrow as pa
 import lancedb
-AGENTS_URI = "data/agents"
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
+AGENTS_URI = os.getenv('AGENTS_URI')
+AGENTS_DB = lancedb.connect(AGENTS_URI)
+
+
+AGENT_STEPS_NAME = "agent_steps"
+
+AGENT_STEPS_SCHEMA = pa.schema([
+    pa.field("id", pa.string(), nullable=False),             # uuid per row
+    pa.field("created_at", pa.string(), nullable=False),     # ISO timestamp
+    pa.field("agent_id", pa.string(), nullable=False),
+    pa.field("session_id", pa.string(), nullable=True),      # nullable for now
+    pa.field("iteration", pa.int32(), nullable=False),       # runner’s counter
+    pa.field("step_token", pa.string(), nullable=True),      # future: moniker step (string)
+    pa.field("next_step_token", pa.string(), nullable=True), # future: moniker next step (string)
+    pa.field("status", pa.string(), nullable=True),          # "ok" | "error" | "info"
+    pa.field("text", pa.string(), nullable=True),            # human output
+    pa.field("data", pa.string(), nullable=True),            # JSON string (optional)
+    pa.field("state", pa.string(), nullable=True),           # JSON string (post-step state)
+    pa.field("guidance", pa.string(), nullable=True),        # JSON string (applied guidance)
+    pa.field("notes", pa.string(), nullable=True),
+    pa.field("latency_ms", pa.int32(), nullable=True),
+    pa.field("error", pa.string(), nullable=True),
+])
+
+def create_agent_steps_schema():
+    print("creating agent_steps_schema")
+    AGENTS_DB.create_table(AGENT_STEPS_NAME, schema=AGENT_STEPS_SCHEMA)
+
+def delete_agent_steps_schema():
+    print("deleting agent_steps_schema")
+    AGENTS_DB.drop_table(AGENT_STEPS_NAME)
+
+
 
 AGENTS_CONFIG_NAME = "agents_config"
 AGENTS_CONFIG_SCHEMA = pa.schema([
@@ -1417,6 +2572,7 @@ QUEUE_SCHEMA = pa.schema([
     pa.field("description", pa.string()),
     pa.field("payload", pa.string()),
     pa.field("metadata", pa.string()),
+    pa.field("session_id", pa.string(), nullable=True),  # NEW
 ])
 
 
@@ -1424,6 +2580,7 @@ AGENT_STATE_NAME = "agent_state"
 
 AGENT_STATE_SCHEMA = pa.schema([
     pa.field("agent_id", pa.string(), nullable=False),
+    pa.field("session_id", pa.string(), nullable=True),   # NEW
     pa.field("status", pa.string(), nullable=False),
     pa.field("iteration", pa.int32(), nullable=True),
     pa.field("result", pa.string(), nullable=True),        # could be JSON string
@@ -1432,12 +2589,41 @@ AGENT_STATE_SCHEMA = pa.schema([
     pa.field("context", pa.string(), nullable=True),        # agentic data
 ])
 
+CONVERSATIONS_NAME = "conversations"
+CONVERSATIONS_SCHEMA = pa.schema([
+    pa.field("conversation_id", pa.string(), nullable=False),
+    pa.field("title", pa.string(), nullable=True),
+    pa.field("status", pa.string(), nullable=True),   # "active" | "ended"
+    pa.field("created_at", pa.string(), nullable=False),
+])
 
+MESSAGES_NAME = "messages"
+MESSAGES_SCHEMA = pa.schema([
+    pa.field("message_id", pa.string(), nullable=False),
+    pa.field("conversation_id", pa.string(), nullable=False),
+    pa.field("author_id", pa.string(), nullable=False),  # agent_id or "user"
+    pa.field("role", pa.string(), nullable=False),       # "agent" | "user" | "system"
+    pa.field("text", pa.string(), nullable=False),
+    pa.field("created_at", pa.string(), nullable=False),
+    pa.field("reply_to", pa.string(), nullable=True),
+    pa.field("meta", pa.string(), nullable=True),        # JSON
+])
 
+PARTICIPANTS_NAME = "participants"
+PARTICIPANTS_SCHEMA = pa.schema([
+    pa.field("conversation_id", pa.string(), nullable=False),
+    pa.field("agent_id", pa.string(), nullable=False),
+    pa.field("session_id", pa.string(), nullable=False),
+    pa.field("persona_config", pa.string(), nullable=True),  # JSON
+    pa.field("joined_at", pa.string(), nullable=False),
+])
 
+def create_conversation_schemas():
+    AGENTS_DB.create_table(CONVERSATIONS_NAME, schema=CONVERSATIONS_SCHEMA)
+    AGENTS_DB.create_table(MESSAGES_NAME, schema=MESSAGES_SCHEMA)
+    AGENTS_DB.create_table(PARTICIPANTS_NAME, schema=PARTICIPANTS_SCHEMA)
 
-AGENTS_DB = lancedb.connect(AGENTS_URI)
-
+# Optionally call from create_all_schemas()
 
 # --------------------
 # Schema management
@@ -1470,9 +2656,656 @@ def delete_queue_schema():
     print("deleting_queue_schema")
     AGENTS_DB.drop_table(QUEUE_NAME)
 
-if __name__ == '__main__':
-    create_agents_config_schema()
 
 
+def create_all_schemas():
+    create_agent_state_schema()
+    create_agent_steps_schema()
+    create_queue_schema()
+#    create_agents_config_schema()
+
+def delete_all_schemas():
+    delete_agent_state_schema()
+    delete_agent_steps_schema()
+    delete_queue_schema()
+
+if __name__ == "__main__":
+    create_all_schemas()
+
+
+
+=== ./store/state_async.py ===
+import asyncio
+from store.agent_state import upsert_agent_state as _upsert
+
+async def upsert_state_async(agent_id, **fields):
+    return await asyncio.to_thread(_upsert, agent_id, **fields)
+
+=== ./store/conversations.py ===
+import uuid
+import json
+from typing import Optional, Literal, Dict, Any, List
+from datetime import datetime, timezone
+
+import lancedb
+import pandas as pd
+
+from .schemas import AGENTS_URI, CONVERSATIONS_NAME, PARTICIPANTS_NAME, MESSAGES_NAME
+
+DB = lancedb.connect(AGENTS_URI)
+
+VALID_CONVERSATION_STATUSES = {"active", "ended", "archived"}
+ORDER_VALUES = {"asc", "desc"}
+
+def _is_nan(v):
+    try:
+        return v is None or (isinstance(v, float) and math.isnan(v)) or pd.isna(v)
+    except Exception:
+        return False
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+def _escape(val: str) -> str:
+    return str(val).replace("'", "\'")
+
+
+
+
+
+def _loads_or(obj, default):
+    if obj is None: 
+        return default
+    if isinstance(obj, (dict, list)): 
+        return obj
+    if isinstance(obj, str) and obj.strip():
+        try: 
+            return json.loads(obj)
+        except Exception: 
+            return default
+    return default
+
+
+
+
+
+def create_conversation(title: Optional[str] = None) -> str:
+    cid = str(uuid.uuid4())
+    DB.open_table(CONVERSATIONS_NAME).add([{
+    "conversation_id": cid,
+    "title": (title or f"Conversation {cid[:8]}").strip(),
+    "status": "active",
+    "created_at": _now_iso(),
+    }])
+    return cid
+
+def set_conversation_status(conversation_id: str, status: str) -> int:
+    if status not in VALID_CONVERSATION_STATUSES:
+        raise ValueError(f"Invalid status: {status}. Allowed: {sorted(VALID_CONVERSATION_STATUSES)}")
+    res = DB.open_table(CONVERSATIONS_NAME).update(
+    where=f"conversation_id == '{_escape(conversation_id)}'",
+    values={"status": status},
+    )
+    return getattr(res, "rows_updated", 0)
+
+def add_participant(conversation_id: str, agent_id: str, session_id: str, persona_config: dict | None = None) -> int:
+    DB.open_table(PARTICIPANTS_NAME).add([{
+    "conversation_id": conversation_id,
+    "agent_id": agent_id,
+    "session_id": session_id,
+    "persona_config": json.dumps(persona_config or {}),
+    "joined_at": _now_iso(),
+    }])
+    return 1
+
+def conversations(
+    status: Optional[str] = "all",
+    limit: int = 100,
+    offset: int = 0,
+    order: Literal["asc", "desc"] = "desc",
+    include_participants: bool = False,
+) -> Dict[str, Any]:
+    """
+    Return a JSON-serializable structure for API responses:
+    {
+    "data": [ {conversation...} ],
+    "meta": { total, returned, limit, offset, order, status, has_more, next_offset }
+    }
+    """
+    if order not in ORDER_VALUES:
+        raise ValueError(f"order must be one of {sorted(ORDER_VALUES)}")
+
+    q = DB.open_table(CONVERSATIONS_NAME).search()
+    if status and status != "all":
+        if status not in VALID_CONVERSATION_STATUSES:
+            raise ValueError(f"Invalid status: {status}. Allowed: {sorted(VALID_CONVERSATION_STATUSES)}")
+        q = q.where(f"status == '{_escape(status)}'")
+
+    df = q.to_pandas()
+    total = int(len(df))
+
+    if df.empty:
+        return {
+            "data": [],
+            "meta": {
+                "total": 0,
+                "returned": 0,
+                "limit": limit,
+                "offset": offset,
+                "order": order,
+                "status": status,
+                "has_more": False,
+                "next_offset": None,
+            },
+        }
+
+    df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce")
+    df = df.sort_values("created_at", ascending=(order == "asc"))
+
+    if offset:
+        df = df.iloc[offset:]
+    if limit is not None:
+        df = df.iloc[:limit]
+
+    items: List[Dict[str, Any]] = []
+    for _, r in df.iterrows():
+        created = r.get("created_at")
+        items.append({
+            "conversation_id": r.get("conversation_id"),
+            "title": r.get("title"),
+            "status": r.get("status"),
+            "created_at": created.isoformat() if pd.notna(created) else None,
+        })
+
+    if include_participants and items:
+        cids = [i["conversation_id"] for i in items]
+        # Build an OR where clause for small pages
+        or_clause = " OR ".join([f"conversation_id == '{_escape(cid)}'" for cid in cids])
+        part_df = DB.open_table(PARTICIPANTS_NAME).search().where(or_clause).to_pandas()
+        if not part_df.empty:
+            # Parse persona_config JSON safely
+            def _to_json(val):
+                if isinstance(val, (dict, list)): return val
+                if isinstance(val, str) and val.strip():
+                    try: return json.loads(val)
+                    except Exception: return {}
+                return {}
+            part_df["persona_config"] = part_df.get("persona_config", "").apply(_to_json)
+
+            grouped = part_df.groupby("conversation_id")
+            participants_map = {
+                cid: [
+                    {
+                        "agent_id": row.agent_id,
+                        "session_id": row.session_id,
+                        "persona_config": row.persona_config,
+                        "joined_at": row.joined_at,
+                    }
+                    for _, row in grp.iterrows()
+                ]
+                for cid, grp in grouped
+            }
+            for item in items:
+                item["participants"] = participants_map.get(item["conversation_id"], [])
+
+    returned = len(items)
+    has_more = total > (offset + returned)
+    return {
+        "data": items,
+        "meta": {
+            "total": total,
+            "returned": returned,
+            "limit": limit,
+            "offset": offset,
+            "order": order,
+            "status": status,
+            "has_more": has_more,
+            "next_offset": (offset + returned) if has_more else None,
+        },
+    }
+
+def list_conversations_for_window(
+    status: str | None = "all",
+    q: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+    order: str = "desc",  # by updated_at
+):
+    conv_tbl = DB.open_table(CONVERSATIONS_NAME)
+    msg_tbl = DB.open_table(MESSAGES_NAME)
+    q_conv = conv_tbl.search()
+    if status and status != "all":
+        q_conv = q_conv.where(f"status == '{status}'")       # FIXME FOR PROD
+    conv_df = q_conv.to_pandas()
+
+    if conv_df.empty:
+        return []
+
+    conv_df["created_at"] = pd.to_datetime(conv_df["created_at"], errors="coerce")
+
+    try:
+        msg_df = msg_tbl.search().to_pandas()
+    except Exception:
+        msg_df = pd.DataFrame()
+
+    if not msg_df.empty:
+        msg_df["created_at"] = pd.to_datetime(msg_df["created_at"], errors="coerce")
+        msg_df = msg_df.sort_values("created_at")
+        last_msg = msg_df.drop_duplicates(subset=["conversation_id"], keep="last")
+        last_msg = last_msg[["conversation_id", "created_at", "text"]].rename(
+            columns={"created_at": "last_msg_at", "text": "preview"}
+        )
+        merged = conv_df.merge(last_msg, on="conversation_id", how="left")
+    else:
+        merged = conv_df.copy()
+        merged["last_msg_at"] = pd.NaT
+        merged["preview"] = ""
+
+    merged["updated_at"] = merged["last_msg_at"].fillna(merged["created_at"])
+
+    # Optional search
+    if q:
+        ql = q.strip().lower()
+        merged["__t"] = (merged["title"].fillna("").astype(str).str.lower()) + " " + (
+            merged["preview"].fillna("").astype(str).str.lower()
+        )
+        merged = merged[merged["__t"].str.contains(ql, na=False)]
+        merged = merged.drop(columns=["__t"])
+
+    # Ensure JSON-safe columns (no NaN/NaT)
+    merged["preview"] = merged["preview"].astype(object)
+    merged.loc[pd.isna(merged["preview"]), "preview"] = ""
+    merged["title"] = merged["title"].astype(object)
+    merged.loc[pd.isna(merged["title"]), "title"] = None
+    merged["status"] = merged["status"].astype(object)
+    merged.loc[pd.isna(merged["status"]), "status"] = None
+
+    merged = merged.sort_values("updated_at", ascending=(order == "asc"))
+    if offset:
+        merged = merged.iloc[offset:]
+    if limit is not None:
+        merged = merged.iloc[:limit]
+
+    items = []
+    for _, r in merged.iterrows():
+        upd = r.get("updated_at")
+        updated_at = upd.isoformat() if pd.notna(upd) else None
+        title = None if _is_nan(r.get("title")) else r.get("title")
+        preview = "" if _is_nan(r.get("preview")) else r.get("preview")
+        status_val = None if _is_nan(r.get("status")) else r.get("status")
+
+        items.append({
+            "id": r.get("conversation_id"),
+            "title": title,
+            "status": status_val,
+            "updated_at": updated_at,
+            "last_updated": updated_at,   # UI fallback
+            "preview": preview,
+        })
+    return items
+
+def get_conversation_messages_and_participants(
+    conversation_id: str,
+    *,
+    limit: int = 500,
+    offset: int = 0,
+    order: str = "asc",   # messages in time order
+    ):
+    msg_tbl = DB.open_table(MESSAGES_NAME)
+    part_tbl = DB.open_table(PARTICIPANTS_NAME)
+
+    # Messages
+    mdf = (
+        msg_tbl.search()
+        .where(f"conversation_id == '{_escape(conversation_id)}'")
+        .to_pandas()
+    )
+    if not mdf.empty:
+        mdf["created_at"] = pd.to_datetime(mdf["created_at"], errors="coerce")
+        mdf = mdf.sort_values("created_at", ascending=(order == "asc"))
+        if offset:
+            mdf = mdf.iloc[offset:]
+        if limit is not None:
+            mdf = mdf.iloc[:limit]
+    msgs = []
+    for _, r in mdf.iterrows():
+        ts = r.get("created_at")
+        msgs.append({
+            "id": r.get("message_id"),
+            "message_id": r.get("message_id"),
+            "conversation_id": r.get("conversation_id"),
+            "author_id": r.get("author_id"),
+            "role": r.get("role"),
+            "text": "" if _is_nan(r.get("text")) else r.get("text"),
+            "created_at": ts.isoformat() if pd.notna(ts) else None,
+            "reply_to": None if _is_nan(r.get("reply_to")) else r.get("reply_to"),
+            "meta": _loads_or(r.get("meta"), default={}),
+        })
+
+    # Participants
+    pdf = (
+        part_tbl.search()
+        .where(f"conversation_id == '{_escape(conversation_id)}'")
+        .to_pandas()
+    )
+    participants = []
+    for _, r in pdf.iterrows():
+        joined = r.get("joined_at")
+        participants.append({
+            "conversation_id": r.get("conversation_id"),
+            "name": r.get("agent_id"),
+            "session_id": r.get("session_id"),
+            "persona_config": _loads_or(r.get("persona_config"), default={}),
+            "joined_at": joined if isinstance(joined, str) else (joined.isoformat() if pd.notna(joined) else None),
+        })
+
+    return {"messages": msgs, "participants": participants}
+
+
+=== ./logic/form_logic.py ===
+import re
+
+ALLOWED_FIELD_TYPES = {"text", "number", "select", "checkbox"}
+
+def sanitize_field(f):
+    if not isinstance(f, dict):
+        return None
+    t = f.get("type")
+    if t not in ALLOWED_FIELD_TYPES:
+        t = "text"
+    name = (f.get("name") or "").strip()
+    if not name:
+        return None
+    label = f.get("label") or name
+    out = {"type": t, "name": name, "label": str(label)}
+    if t == "select":
+        opts = f.get("options") or []
+        norm = []
+        for o in opts:
+            if isinstance(o, str):
+                norm.append({"value": o, "label": o})
+            elif isinstance(o, dict) and "value" in o and "label" in o:
+                norm.append({"value": o["value"], "label": o["label"]})
+        out["options"] = norm
+    return out
+
+def sanitize_form_schema(schema):
+    """Sanitizes a list of form field dicts."""
+    if not isinstance(schema, list):
+        return []
+    return [s for s in (sanitize_field(f) for f in schema) if s is not None]
+
+def clamp(v, lo, hi, default):
+    try:
+        n = float(v)
+        return max(lo, min(hi, n))
+    except Exception:
+        return default
+
+def sanitize_config(cfg):
+    if not isinstance(cfg, dict):
+        return None
+    kind = cfg.get("kind") or "form"
+    # allow only kinds the Canvas knows
+    if kind not in {"form", "metadata", "chat", "agentsList"}:
+        kind = "form"
+
+    out = {
+        "kind": kind,
+        "title": str(cfg.get("title") or ("Metadata Editor" if kind == "metadata" else "Form")),
+        "persist": "keep" if cfg.get("persist") == "keep" else "destroy"
+    }
+
+    if kind == "form":
+        schema = cfg.get("schema") or []
+        schema = sanitize_form_schema(schema)
+        out["schema"] = schema
+        out["value"] = cfg.get("value") if isinstance(cfg.get("value"), dict) else {}
+    elif kind == "metadata":
+        val = cfg.get("value")
+        out["value"] = val if isinstance(val, dict) else {"entities": []}
+    elif kind == "chat":
+        out["messages"] = cfg.get("messages") if isinstance(cfg.get("messages"), list) else []
+        out["chatConfig"] = cfg.get("chatConfig") if isinstance(cfg.get("chatConfig"), dict) else {}
+
+    size = cfg.get("size") or {}
+    out["size"] = {
+        "w": clamp(size.get("w"), 320, 1200, 420),
+        "h": clamp(size.get("h"), 200, 900, 280)
+    }
+    pos = cfg.get("position") or {}
+    out["position"] = {
+        "x": clamp(pos.get("x"), 0, 4000, 40),
+        "y": clamp(pos.get("y"), 0, 4000, 40)
+    }
+
+    return out
+
+def form_from_prompt(prompt: str):
+    """
+    Very basic rules demo: you likely want to replace this with real LLM logic!
+    """
+    p = prompt.lower()
+    print(p)
+
+    if "agent" in p :
+        print("agent in p")
+        return {
+            "kind": "agentsList",
+            "title": "Available Agents",
+            "persist": "keep",
+            "value": {"entities": []}
+        }
+    
+    if "product" in p:
+        return {
+            "kind": "form",
+            "title": "Product Form",
+            "persist": "keep",
+            "schema": [
+                {"type": "text", "name": "title", "label": "Title"},
+                {"type": "number", "name": "price", "label": "Price"},
+                {"type": "select", "name": "category", "label": "Category", "options": ["A", "B", "C"]},
+                {"type": "checkbox", "name": "active", "label": "Active"},
+            ],
+            "value": {"active": True}
+        }
+    elif "agent" in p :
+        print("agent in p")
+        return {
+            "kind": "agentsList",
+            "title": "Available Agents",
+            "persist": "keep",
+            "value": {"entities": []}
+        }
+    elif "metadata" in p:
+        return {
+            "kind": "metadata",
+            "title": "Metadata Editor",
+            "persist": "keep",
+            "value": {"entities": []}
+        }
+    elif "chat" in p:
+        if "aws" in p:
+            return {
+                "kind": "chat",
+                "title": "Chat with AWS",
+                "persist": "keep",
+                "chatType": "support",
+                "value": {"entities": []}
+            }
+        else:
+            return {
+                "kind": "chat",
+                "title": "Chat with OpenAI",
+                "persist": "keep",
+                "chatType": "analysis",
+                "value": {"entities": []}
+            }
+    else:
+        return {
+            "kind": "form",
+            "title": "User Form",
+            "persist": "keep",
+            "schema": [
+                {"type": "text", "name": "name", "label": "Name"},
+                {"type": "number", "name": "age", "label": "Age"},
+                {"type": "select", "name": "role", "label": "Role", "options": ["User", "Admin"]},
+                {"type": "checkbox", "name": "agree", "label": "Agree to terms"},
+            ],
+            "value": {"agree": False}
+        }
+
+def prompt_to_schema(prompt: str):
+    """
+    Top-level function to process a prompt into a sanitized Canvas-ready config.
+    Call this from Flask or elsewhere.
+    """
+    # In a real system, swap in LLM or smarter logic here.
+    cfg = form_from_prompt(prompt)
+    safe = sanitize_config(cfg)
+    return safe
+
+# Optionally: for explicit export
+__all__ = [
+    "prompt_to_schema",
+    "sanitize_config",
+    "form_from_prompt",
+    "sanitize_field",
+    "sanitize_form_schema"
+]
+
+=== ./logic/chat_logic.py ===
+import json
+import asyncio
+
+ALLOWED_CHAT_TYPES = {"default", "support", "analysis"}
+ALLOWED_ROLES = {"user", "assistant", "system"}
+
+def clamp_str(s, max_len=4000):
+    try:
+        s = str(s)
+    except Exception:
+        s = ""
+    return s[:max_len]
+
+def sanitize_messages(msgs, limit=30):
+    """Keep only recent messages, strip to safe shape."""
+    if not isinstance(msgs, list):
+        return []
+    out = []
+    for m in msgs[-limit:]:
+        if not isinstance(m, dict):
+            continue
+        role = m.get("role")
+        content = clamp_str(m.get("content", ""), 4000)
+        if role in ALLOWED_ROLES and content:
+            out.append({"role": role, "content": content})
+    return out
+
+def parse_mcp_result(res):
+    """
+    Attempt to extract a text snippet from a fastmcp result.
+    Handles either a structured object with content[0].text or raw JSON/text.
+    """
+    try:
+        if hasattr(res, "content") and res.content:
+            txt = getattr(res.content[0], "text", None)
+            if txt is not None:
+                try:
+                    data = json.loads(txt)
+                    # Adapt this line to your MCP format!
+                    return data['response']['payload']['content']['result'][0]['context']
+                except Exception:
+                    return txt
+            else:
+                return "No content found."
+        if isinstance(res, dict):
+            return (
+                res.get("response", {})
+                .get("payload", {})
+                .get("content", {})
+                .get("result")
+                or json.dumps(res)
+            )
+        return str(res)
+    except Exception as e:
+        return f"Tool response parse error: {e}"
+
+def build_reply(messages, chat_type, config, mcp_search_async=None):
+    """
+    Returns the assistant's reply as plain text (use for streaming).
+    mcp_search_async is an optional async search callback, if using external tool.
+    """
+    # last user message
+    last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
+    if not last_user:
+        last_user = "(no user message)"
+
+    if chat_type == "support":
+        return (
+            "Support assistant here. I’m looking into your request...\n\n"
+            f"Summary of your issue: {last_user}\n"
+            "- Tip: You can provide order IDs or timestamps to speed things up.\n"
+            "Let me know if you have screenshots or logs."
+        )
+    elif chat_type == "analysis":
+        words = last_user.split()
+        return (
+            "Analysis assistant: quick take.\n\n"
+            f"- Word count: {len(words)}\n"
+            f"- First 8 tokens: {words[:8]}\n"
+            "Conclusion: provide a dataset sample and the hypothesis you want to test."
+        )
+    else:
+        # For "default" type, fall back to search or LLM, if mcp_search_async is provided.
+        if mcp_search_async:
+            # Note: In Flask handler, call using run_async(mcp_search_async(last_user))
+            try:
+                result = mcp_search_async(last_user)  # if callable returns string
+                return str(result)
+            except Exception as e:
+                return f"Tool call failed: {e}"
+        return "Default assistant reply: " + last_user
+
+def run_async(coro):
+    """Run an async coroutine from sync context safely."""
+    try:
+        loop = asyncio.get_running_loop()
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            return pool.submit(asyncio.run, coro).result()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+import time
+
+def stream_text(text, chunk_size=16, delay=0.02):
+    """Yield plain text chunks (no SSE framing), for Flask streaming."""
+    try:
+        for i in range(0, len(text), chunk_size):
+            yield text[i:i+chunk_size]
+            time.sleep(delay)
+    except (GeneratorExit, BrokenPipeError):
+        return
+
+# Optionally: for explicit export
+__all__ = [
+    "sanitize_messages",
+    "build_reply",
+    "stream_text",
+    "run_async",
+    "clamp_str",
+    "parse_mcp_result"
+]
+
+=== ./logic/agents_logic.py ===
+from store.agent_config import list_agent_configs as store_list_agent_configs
+
+from queue_imp import agent_destroy_action
+
+def list_agent_configs():
+    # Pretend this returns from DB, here is hardcoded for demo:
+    return store_list_agent_configs()
 
 

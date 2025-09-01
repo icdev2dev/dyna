@@ -100,7 +100,8 @@
     {#each messages as m (m.id)}
       <div class="msg {m.role}">
         <div class="bubble">
-          {m.content}
+          
+          {m.text}
           {#if m.meta?.error}
             <div class="err">Error: {m.meta.error}</div>
           {/if}

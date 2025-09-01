@@ -10,6 +10,8 @@ from joke_agent import JokeAgent
 
 from store.agent_state import upsert_agent_state, get_agent_state
 from environment import environment_reload as _environment_reload
+from persona_agent import PersonaAgent
+from store.conversations import add_participant
 
 JOKE_AGENTS = {}  # agent_id -> JokeAgent
 SESSIONS = {}              # session_id -> instance
@@ -80,11 +82,12 @@ async def agent_create(db, async_tbl, action):
     action_id = action.get("action_id")
     try:
         payload = json.loads(action.get("payload") or "{}")
+
         agent_id = payload.get("agent_id")
+        agent_type = payload.get("agent_type") or "JokeAgent"
+        conversation_id = payload.get("conversation_id")
+        persona_config = payload.get("persona_config") or {}
         initial_subject = payload.get("initial_subject", "foot")
-        print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
-        print(initial_subject)
-        print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
         
         session_id = payload.get("session_id") or action.get("session_id") or str(uuid.uuid4())
 
@@ -96,27 +99,68 @@ async def agent_create(db, async_tbl, action):
             print(f"Session {session_id} already exists; skipping.")
             return
 
-        agent = JokeAgent(
-            agent_id,
-            session_id,
-            initial_subject=initial_subject,
-            state_updater=functools.partial(upsert_state_async, agent_id=agent_id, session_id=session_id),
-            steps_appender=functools.partial(
+
+
+        if agent_type == "PersonaAgent":
+            agent = PersonaAgent(
+                agent_id,
+                session_id,
+                conversation_id=conversation_id,
+                persona_config=persona_config,
+                loop_interval=payload.get("loop_interval", 1.5),
+                state_updater=functools.partial(upsert_state_async, agent_id=agent_id, session_id=session_id),
+                steps_appender=functools.partial(
+                    __import__("store.steps_async", fromlist=["append_step_async"]).append_step_async,
+                    agent_id,
+                    session_id=session_id
+                ),
+            )
+        else:
+            agent = JokeAgent(
+                agent_id,
+                session_id,
+                initial_subject=initial_subject,
+                state_updater=functools.partial(upsert_state_async, agent_id=agent_id, session_id=session_id),
+                steps_appender=functools.partial(
                 # append_step_async signature (agent_id, iteration, **fields)
                 __import__("store.steps_async", fromlist=["append_step_async"]).append_step_async,
                 agent_id,
                 session_id=session_id
-            ),
-        )
+                ),
+            )
+
+
+
+
+
+
+
+
 
         # Register
         SESSIONS[session_id] = agent
         AGENT_LATEST[agent_id] = session_id
         JOKE_AGENTS[agent_id] = agent  # legacy compatibility
 
+
+        try:
+            if agent_type == "PersonaAgent" and conversation_id:
+                add_participant(conversation_id, agent_id, session_id, persona_config)
+        except Exception as e:
+            print(f"add_participant failed: {e}")
+
+
         task = asyncio.create_task(agent.run())
         agent._task = task
-        print(f"Agent {agent_id}/{session_id}: launching JokeAgent loop (subject={initial_subject})")
+
+
+
+        atype = "PersonaAgent" if agent_type == "PersonaAgent" else "JokeAgent"
+        print(f"Agent {agent_id}/{session_id}: launching {atype} loop"
+        + (f" (conversation={conversation_id})" if agent_type == "PersonaAgent" else f" (subject={initial_subject})"))
+
+
+
     finally:
         if action_id:
             await mark_action_processed_async(async_tbl, action_id)

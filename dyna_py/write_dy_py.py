@@ -26,3 +26,15 @@ with open(output_file, 'w', encoding='utf-8') as outfile:
                         outfile.write(f'=== {filepath} ===\n')  # Optional file boundary
                         outfile.write(content + "\n\n")
         
+        for fname in os.listdir(input_dir+"logic"):
+            filepath = os.path.join(input_dir + "logic", fname)
+            
+            if os.path.isfile(filepath):
+                #print(filepath)
+                if fname.endswith(".py") and not fname.startswith("write") :
+                    print(filepath)
+                    with open(filepath, 'r', encoding='utf-8') as infile:
+                        content = infile.read()
+                        outfile.write(f'=== {filepath} ===\n')  # Optional file boundary
+                        outfile.write(content + "\n\n")
+        

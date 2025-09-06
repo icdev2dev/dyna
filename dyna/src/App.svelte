@@ -99,6 +99,32 @@
 
         Conversations
         </button>
+        <button type="button" onclick={() => 
+            controller?.spawn({ kind: 'agentConfigs', title: 'Agent Configs', persist: 'keep',size: { w: 960, h: 600 }})
+        }>
+
+        Agent Configs
+        </button>
+
+        <button type="button" onclick={() =>
+            controller.spawn({ kind: 'conversations', title: 'Conversations', persist: 'keep', size: { w: 410, h: 560 }})}
+            >
+
+            Conversations
+            </button>
+        <button type="button" onclick={() => 
+            controller.spawn({
+            kind: 'taskGraph',
+            title: 'Task Graph',
+            persist: 'keep',
+            size: { w: 1000, h: 640 },
+            position: { x: 60, y: 60 }
+            })
+        }>
+
+        Task Graph
+        </button>
+
 
 </div>
 <!--

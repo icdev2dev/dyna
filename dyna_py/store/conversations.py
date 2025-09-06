@@ -331,3 +331,31 @@ def add_participant_if_absent(conversation_id: str, agent_id: str, session_id: s
     if participant_exists(conversation_id, agent_id, session_id):
         return 0
     return add_participant(conversation_id, agent_id, session_id, persona_config)
+
+
+def list_participants(conversation_id: str) -> list[dict]:
+    tbl = DB.open_table(PARTICIPANTS_NAME)
+    df = tbl.search().where(f"conversation_id == '{conversation_id}'").to_pandas()
+    if df is None or df.empty:
+        return []
+    import json
+    def _to_json(val):
+        if isinstance(val, (dict, list)): return val
+        if isinstance(val, str) and val.strip():
+            try: 
+                return json.loads(val)
+            except Exception: return {}
+        return {}
+    
+    df["persona_config"] = df.get("persona_config", "").apply(_to_json)
+    out = []
+    for _, r in df.iterrows():
+        out.append({
+        "agent_id": r.get("agent_id"),
+        "session_id": r.get("session_id"),
+        "persona_config": r.get("persona_config") or {},
+        "joined_at": r.get("joined_at"),
+        })
+    return out
+
+

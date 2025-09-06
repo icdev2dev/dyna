@@ -24,7 +24,14 @@ class PersonaAgent(PauseMixin, InterruptMixin, LoopingAgentBase):
         self.cooldown_seconds = cooldown_seconds
         self._last_spoke_at: Optional[datetime] = None
         self._force_tick = False
+        
+        self.participants: dict[str, dict] = {}
+        self._participants_last_fetch = None
+        self.participants_refresh_secs = 5.0  # tune as you like
         super().__init__(agent_id, session_id, loop_interval=loop_interval, **kwargs)
+
+
+
 
     def initial_context(self) -> Optional[dict]:
         return {
@@ -32,6 +39,49 @@ class PersonaAgent(PauseMixin, InterruptMixin, LoopingAgentBase):
             "conversation_id": self.conversation_id,
             "persona": self.persona_config.get("name") or self.agent_id,
         }
+
+
+    async def _refresh_participants(self, force: bool = False) -> dict | None:
+        from datetime import datetime, timedelta
+        now = datetime.now()
+        if (not force) and self._participants_last_fetch and (now - self._participants_last_fetch).total_seconds() < self.participants_refresh_secs:
+            return None
+        try:
+            # Option 1:
+            from store.conversations import list_participants
+            plist = list_participants(self.conversation_id)
+            # Option 2:
+            # from store.conversations import get_conversation_messages_and_participants
+            # plist = get_conversation_messages_and_participants(self.conversation_id)["participants"]
+
+            # Normalize into a dict keyed by agent_id
+            pmap = {}
+            for p in plist:
+                aid = p.get("agent_id")
+                if not aid: 
+                    continue
+                cfg = p.get("persona_config") or {}
+                name = cfg.get("name") or aid
+                pmap[aid] = {
+                    "agent_id": aid,
+                    "session_id": p.get("session_id"),
+                    "name": name,
+                    "tone": cfg.get("tone"),
+                    "joined_at": p.get("joined_at"),
+                }
+            self.participants = pmap
+            self._participants_last_fetch = now
+
+            # Merge a compact summary into context for observability
+            summary = sorted([v["name"] for v in pmap.values()])
+            return {"participants": summary, "participants_count": len(summary)}
+        except Exception:
+            return None
+
+    async def on_start(self):
+        ctx = await self._refresh_participants(force=True)
+        return ctx or {}
+
 
 
     def _can_speak_now(self) -> bool:
@@ -47,7 +97,11 @@ class PersonaAgent(PauseMixin, InterruptMixin, LoopingAgentBase):
         return f"[{persona} | tone={tone}] {last_user}"
 
     async def do_tick(self, step: int) -> StepOutcome:
+        
+        await self._refresh_participants()
+
         msgs = list_messages_since(self.conversation_id, self.last_seen_iso, limit=50)
+
         if not msgs:
             return StepOutcome(status="info", text=None, state={"idle": True, "conversation_id": self.conversation_id})
 
@@ -61,8 +115,10 @@ class PersonaAgent(PauseMixin, InterruptMixin, LoopingAgentBase):
         except Exception:
             pass
 
-
         last = msgs[-1]
+        # Example: use awareness
+        author_id = last.get("author_id")
+        author_name = self.participants.get(author_id, {}).get("name", author_id)
 
 
         if last.get("author_id") == self.agent_id:
@@ -73,12 +129,15 @@ class PersonaAgent(PauseMixin, InterruptMixin, LoopingAgentBase):
 
         window = msgs[-10:]
         reply = await self._generate_reply(window)
+        reply = f"{reply}\n\n(p.s. I heard {author_name}; participants: {', '.join(sorted([v['name'] for v in self.participants.values()]))})"
+
 
         return StepOutcome(
             status="ok",
             data={"intent": {"type": "speak", "mode": "answer", "text": reply}},
             state={"conversation_id": self.conversation_id}
         )
+    
 
     
     async def run(self):
@@ -96,6 +155,11 @@ class PersonaAgent(PauseMixin, InterruptMixin, LoopingAgentBase):
             if lsi:
                 self.last_seen_iso = str(lsi)
                 return {"last_seen_iso": self.last_seen_iso}
+
+
+        if t == "participants_changed": 
+            ctx = await self._refresh_participants(force=True) 
+            return ctx or {"participants_refreshed": True}
 
         if t == "set_tone":
             tone = str(g.get("tone") or "").strip()

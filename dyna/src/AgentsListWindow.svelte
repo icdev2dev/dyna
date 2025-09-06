@@ -15,6 +15,9 @@
   let error = $state(null); 
   let agentConfigs = $state([]); 
   let selected = $state({}); 
+
+  let launchAgentType = $state('');
+
   // Popover 
   let menuOpen = $state(false); 
   let menuX = $state(0), menuY = $state(0); 
@@ -68,6 +71,7 @@
   function openLaunch(agent) { 
     launchErr = null; 
     launchAgentId = agent?.agent_id ?? ''; 
+    launchAgentType = agent?.agent_type ?? ''; // NEW
     launchOpen = true; 
   } 
   function showProps(agent) { 
@@ -84,7 +88,25 @@
   async function handleLaunchConfirm({ agent_id, session_id, prompt, config }) { 
     launchBusy = true; 
     launchErr = null; 
-    try { 
+
+
+
+
+
+    try {
+      if ((launchAgentType || '').toLowerCase() === 'goalagent') {
+// Tell Canvas to open TaskGraph with this prompt
+      try {
+          rootEl?.dispatchEvent(new CustomEvent('openTaskGraph', {
+          detail: { prompt: prompt || '' },
+          bubbles: true,
+          composed: true
+          }));
+        } catch {}
+        launchOpen = false;
+        return;
+      }
+     
       const res = await fetch('http://127.0.0.1:5000/api/create-agent', { 
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' }, 
@@ -165,16 +187,35 @@ onRequestClose={requestClose} >
 </WindowFrame>
 
 {#if menuOpen}
-
+  {@const t = (menuAgent?.agent_type || '').toLowerCase()}
+    
   <div 
     class="popover-menu" 
     style={`left: ${menuX}px; top: ${menuY}px;`} 
     onclick={e => e.stopPropagation()} > 
-      <button 
-        class="pmenu-btn" 
-        onclick={() => { openLaunch(menuAgent); closeMenu(); }}>🚀 
-        Launch Agent Run
-      </button> 
+    `
+  <button
+    class="pmenu-btn"
+    onclick={() => {
+      // Ask for seed only for GoalAgent (optional)
+//      const seed = t === 'goalagent' ? (window.prompt('Describe your goal (optional):', '') || '') : '';
+      rootEl?.dispatchEvent(new CustomEvent('openAgentRun', {
+        detail: {
+        agent_id: menuAgent.agent_id,
+        agent_type: menuAgent.agent_type,
+        prompt: ''
+        },
+        bubbles: true, composed: true
+      }));
+      closeMenu();
+    }}>
+    {t === 'goalagent' ? '🎯 Open Goal Planner' : '🚀 Launch Agent Run'}
+  </button>
+
+
+
+
+
       <button 
         class="pmenu-btn" 
         onclick={() => { /* show runs */ rootEl?.dispatchEvent(new CustomEvent('showAgentRuns', { detail: { agent_id: menuAgent.agent_id }, bubbles: true, composed: true })); closeMenu(); }}>📊 

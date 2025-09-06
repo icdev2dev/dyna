@@ -22,10 +22,28 @@ class LlmResponseParser:
     def __init__(self, options: DoNotUseDirectlyCallManager):
         self.__options = options
 
-    def JokeTeller(
+    def GenerateConstrainedTaskGraph(
+        self, llm_response: str, baml_options: BamlCallOptions = {},
+    ) -> types.ConstrainedTaskGraph:
+        result = self.__options.merge_options(baml_options).parse_response(function_name="GenerateConstrainedTaskGraph", llm_response=llm_response, mode="request")
+        return typing.cast(types.ConstrainedTaskGraph, result)
+
+    def GenerateTaskGraph(
+        self, llm_response: str, baml_options: BamlCallOptions = {},
+    ) -> types.TaskGraph:
+        result = self.__options.merge_options(baml_options).parse_response(function_name="GenerateTaskGraph", llm_response=llm_response, mode="request")
+        return typing.cast(types.TaskGraph, result)
+
+    def GetRegisteredWindow(
+        self, llm_response: str, baml_options: BamlCallOptions = {},
+    ) -> types.RegisteredWindow:
+        result = self.__options.merge_options(baml_options).parse_response(function_name="GetRegisteredWindow", llm_response=llm_response, mode="request")
+        return typing.cast(types.RegisteredWindow, result)
+
+    def Hello(
         self, llm_response: str, baml_options: BamlCallOptions = {},
     ) -> str:
-        result = self.__options.merge_options(baml_options).parse_response(function_name="JokeTeller", llm_response=llm_response, mode="request")
+        result = self.__options.merge_options(baml_options).parse_response(function_name="Hello", llm_response=llm_response, mode="request")
         return typing.cast(str, result)
 
     def RAG(
@@ -33,24 +51,6 @@ class LlmResponseParser:
     ) -> types.Response:
         result = self.__options.merge_options(baml_options).parse_response(function_name="RAG", llm_response=llm_response, mode="request")
         return typing.cast(types.Response, result)
-
-    def SampleInput(
-        self, llm_response: str, baml_options: BamlCallOptions = {},
-    ) -> types.StepFrameIn:
-        result = self.__options.merge_options(baml_options).parse_response(function_name="SampleInput", llm_response=llm_response, mode="request")
-        return typing.cast(types.StepFrameIn, result)
-
-    def SampleOutput(
-        self, llm_response: str, baml_options: BamlCallOptions = {},
-    ) -> types.StepFrameOut:
-        result = self.__options.merge_options(baml_options).parse_response(function_name="SampleOutput", llm_response=llm_response, mode="request")
-        return typing.cast(types.StepFrameOut, result)
-
-    def TellAJoke(
-        self, llm_response: str, baml_options: BamlCallOptions = {},
-    ) -> types.MonikerStepFrameOut:
-        result = self.__options.merge_options(baml_options).parse_response(function_name="TellAJoke", llm_response=llm_response, mode="request")
-        return typing.cast(types.MonikerStepFrameOut, result)
 
     def TellAJokeV2(
         self, llm_response: str, baml_options: BamlCallOptions = {},
@@ -66,10 +66,28 @@ class LlmStreamParser:
     def __init__(self, options: DoNotUseDirectlyCallManager):
         self.__options = options
 
-    def JokeTeller(
+    def GenerateConstrainedTaskGraph(
+        self, llm_response: str, baml_options: BamlCallOptions = {},
+    ) -> stream_types.ConstrainedTaskGraph:
+        result = self.__options.merge_options(baml_options).parse_response(function_name="GenerateConstrainedTaskGraph", llm_response=llm_response, mode="stream")
+        return typing.cast(stream_types.ConstrainedTaskGraph, result)
+
+    def GenerateTaskGraph(
+        self, llm_response: str, baml_options: BamlCallOptions = {},
+    ) -> stream_types.TaskGraph:
+        result = self.__options.merge_options(baml_options).parse_response(function_name="GenerateTaskGraph", llm_response=llm_response, mode="stream")
+        return typing.cast(stream_types.TaskGraph, result)
+
+    def GetRegisteredWindow(
+        self, llm_response: str, baml_options: BamlCallOptions = {},
+    ) -> types.RegisteredWindow:
+        result = self.__options.merge_options(baml_options).parse_response(function_name="GetRegisteredWindow", llm_response=llm_response, mode="stream")
+        return typing.cast(types.RegisteredWindow, result)
+
+    def Hello(
         self, llm_response: str, baml_options: BamlCallOptions = {},
     ) -> str:
-        result = self.__options.merge_options(baml_options).parse_response(function_name="JokeTeller", llm_response=llm_response, mode="stream")
+        result = self.__options.merge_options(baml_options).parse_response(function_name="Hello", llm_response=llm_response, mode="stream")
         return typing.cast(str, result)
 
     def RAG(
@@ -77,24 +95,6 @@ class LlmStreamParser:
     ) -> stream_types.Response:
         result = self.__options.merge_options(baml_options).parse_response(function_name="RAG", llm_response=llm_response, mode="stream")
         return typing.cast(stream_types.Response, result)
-
-    def SampleInput(
-        self, llm_response: str, baml_options: BamlCallOptions = {},
-    ) -> stream_types.StepFrameIn:
-        result = self.__options.merge_options(baml_options).parse_response(function_name="SampleInput", llm_response=llm_response, mode="stream")
-        return typing.cast(stream_types.StepFrameIn, result)
-
-    def SampleOutput(
-        self, llm_response: str, baml_options: BamlCallOptions = {},
-    ) -> stream_types.StepFrameOut:
-        result = self.__options.merge_options(baml_options).parse_response(function_name="SampleOutput", llm_response=llm_response, mode="stream")
-        return typing.cast(stream_types.StepFrameOut, result)
-
-    def TellAJoke(
-        self, llm_response: str, baml_options: BamlCallOptions = {},
-    ) -> stream_types.MonikerStepFrameOut:
-        result = self.__options.merge_options(baml_options).parse_response(function_name="TellAJoke", llm_response=llm_response, mode="stream")
-        return typing.cast(stream_types.MonikerStepFrameOut, result)
 
     def TellAJokeV2(
         self, llm_response: str, baml_options: BamlCallOptions = {},

@@ -1,3 +1,15 @@
+function Hello(inp_txt:string) -> string {
+  client CustomGPT4oMini
+  prompt #"
+    Say something in response to input text
+    {{ctx.output_format}}
+
+    --------------
+    {{inp_txt}}
+    --------------
+  "#
+}
+
 class Response {
   can_the_question_be_answered bool @description(#"
     ability of the question to be answered in the given context

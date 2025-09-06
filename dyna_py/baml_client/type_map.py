@@ -16,20 +16,20 @@ from . import stream_types
 
 type_map = {
 
-    "types.MonikerData": types.MonikerData,
-    "stream_types.MonikerData": stream_types.MonikerData,
+    "types.Completion": types.Completion,
+    "stream_types.Completion": stream_types.Completion,
 
-    "types.MonikerGuidance": types.MonikerGuidance,
-    "stream_types.MonikerGuidance": stream_types.MonikerGuidance,
+    "types.ConstrainedTask": types.ConstrainedTask,
+    "stream_types.ConstrainedTask": stream_types.ConstrainedTask,
 
-    "types.MonikerState": types.MonikerState,
-    "stream_types.MonikerState": stream_types.MonikerState,
+    "types.ConstrainedTaskGraph": types.ConstrainedTaskGraph,
+    "stream_types.ConstrainedTaskGraph": stream_types.ConstrainedTaskGraph,
 
-    "types.MonikerStepFrameIn": types.MonikerStepFrameIn,
-    "stream_types.MonikerStepFrameIn": stream_types.MonikerStepFrameIn,
+    "types.DataEdge": types.DataEdge,
+    "stream_types.DataEdge": stream_types.DataEdge,
 
-    "types.MonikerStepFrameOut": types.MonikerStepFrameOut,
-    "stream_types.MonikerStepFrameOut": stream_types.MonikerStepFrameOut,
+    "types.Port": types.Port,
+    "stream_types.Port": stream_types.Port,
 
     "types.Response": types.Response,
     "stream_types.Response": stream_types.Response,
@@ -40,9 +40,23 @@ type_map = {
     "types.StepFrameOut": types.StepFrameOut,
     "stream_types.StepFrameOut": stream_types.StepFrameOut,
 
+    "types.Task": types.Task,
+    "stream_types.Task": stream_types.Task,
+
+    "types.TaskGraph": types.TaskGraph,
+    "stream_types.TaskGraph": stream_types.TaskGraph,
+
+
+    "types.CompletionPolicy": types.CompletionPolicy,
+
+    "types.ExecutionMode": types.ExecutionMode,
 
     "types.GenericStepOutControl": types.GenericStepOutControl,
 
     "types.GenericStepOutStatus": types.GenericStepOutStatus,
+
+    "types.RegisteredWindow": types.RegisteredWindow,
+
+    "types.TaskType": types.TaskType,
 
 }

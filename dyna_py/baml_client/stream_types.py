@@ -23,34 +23,42 @@ class StreamState(BaseModel, typing.Generic[StreamStateValueT]):
     value: StreamStateValueT
     state: typing_extensions.Literal["Pending", "Incomplete", "Complete"]
 # #########################################################################
-# Generated classes (8)
+# Generated classes (10)
 # #########################################################################
 
-class MonikerData(BaseModel):
-    topic: typing.Optional[str] = None
+class Completion(BaseModel):
+    policy: typing.Optional[typing.Union[types.CompletionPolicy, str]] = None
+    k: typing.Optional[int] = None
 
-class MonikerGuidance(BaseModel):
-    topic: typing.Optional[str] = None
-    style: typing.Optional[str] = None
+class ConstrainedTask(BaseModel):
+    id: typing.Optional[str] = None
+    title: typing.Optional[str] = None
+    description: typing.Optional[str] = None
+    taskType: typing.Optional[types.TaskType] = None
+    executionMode: typing.Optional[typing.Union[types.ExecutionMode, str]] = None
+    subtasks: typing.List["ConstrainedTask"]
+    dependsOn: typing.Optional[typing.List[str]] = None
+    inputPorts: typing.Optional[typing.List["Port"]] = None
+    outputPorts: typing.Optional[typing.List["Port"]] = None
+    completion: typing.Optional["Completion"] = None
+    agentId: typing.Optional[str] = None
+    guard: typing.Optional[str] = None
 
-class MonikerState(BaseModel):
-    topic: typing.Optional[str] = None
-    last_style: typing.Optional[str] = None
-    last_output: typing.Optional[str] = None
+class ConstrainedTaskGraph(BaseModel):
+    tasks: typing.Optional[typing.List["ConstrainedTask"]] = None
+    roots: typing.Optional[typing.List[str]] = None
+    edges: typing.Optional[typing.List["DataEdge"]] = None
 
-class MonikerStepFrameIn(BaseModel):
-    step: typing.Optional[str] = None
-    state: typing.Optional["MonikerState"] = None
-    guidance: typing.Optional["MonikerGuidance"] = None
+class DataEdge(BaseModel):
+    fromTaskId: typing.Optional[str] = None
+    fromPort: typing.Optional[str] = None
+    toTaskId: typing.Optional[str] = None
+    toPort: typing.Optional[str] = None
 
-class MonikerStepFrameOut(BaseModel):
-    step: typing.Optional[str] = None
-    state: typing.Optional["MonikerState"] = None
-    next_step: typing.Optional[str] = None
-    text: typing.Optional[str] = None
-    data: typing.Optional["MonikerData"] = None
-    done: typing.Optional[bool] = None
-    notes: typing.Optional[str] = None
+class Port(BaseModel):
+    name: typing.Optional[str] = None
+    type: typing.Optional[str] = None
+    required: typing.Optional[bool] = None
 
 class Response(BaseModel):
     can_the_question_be_answered: typing.Optional[bool] = None
@@ -68,6 +76,24 @@ class StepFrameOut(BaseModel):
     text: typing.Optional[str] = None
     payload: typing.Optional[str] = None
     context_delta: typing.Optional[str] = None
+
+class Task(BaseModel):
+    id: typing.Optional[str] = None
+    title: typing.Optional[str] = None
+    description: typing.Optional[str] = None
+    executionMode: typing.Optional[typing.Union[types.ExecutionMode, str]] = None
+    subtasks: typing.Optional[typing.List["Task"]] = None
+    dependsOn: typing.Optional[typing.List[str]] = None
+    inputPorts: typing.Optional[typing.List["Port"]] = None
+    outputPorts: typing.Optional[typing.List["Port"]] = None
+    completion: typing.Optional["Completion"] = None
+    agentId: typing.Optional[str] = None
+    guard: typing.Optional[str] = None
+
+class TaskGraph(BaseModel):
+    tasks: typing.List["Task"]
+    roots: typing.Optional[typing.List[str]] = None
+    edges: typing.Optional[typing.List["DataEdge"]] = None
 
 # #########################################################################
 # Generated type aliases (0)

@@ -1,15 +1,19 @@
 from baml_client import b
 
-print (b.RAG("how to configure s3", ''' 
-             # background 
-             - the customer is interested in setting up s3 for lambda use
-             # Use Cases
-             ## how to setup  s3 (general  case)
-             - login to console
-             - look at s3
-             ## how to setup s3 for AWS Lambda
-             - ensure that you have a lambda function
-             - configure s3 to trust s3
-             # how to setup ec2
-             - this is hard
-             '''))
+#print(b.GenerateTaskGraph("Can you please help with localizing the given file (english) hosted in s3 to French, Spanish & German and then finally after completing the localizations inform me when done."))
+#print(b.GenerateConstrainedTaskGraph("how to extend credit for a borrower"))
+taskGraph = b.GenerateTaskGraph("Build the service, then run unit, integration, and security tests in parallel, and finally deploy to staging")
+
+def printTask(task, indent=0):
+    print(' '*indent + task.title)
+    if task.subtasks:
+        for stask in task.subtasks:
+            printTask(stask, indent=indent+3)
+    else:
+        return
+
+
+     
+for task in taskGraph.tasks:
+    printTask(task)
+

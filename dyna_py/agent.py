@@ -11,7 +11,6 @@ from joke_agent import JokeAgent
 from store.agent_state import upsert_agent_state, get_agent_state
 from environment import environment_reload as _environment_reload
 from persona_agent import PersonaAgent
-from store.conversations import add_participant
 from store.conversations import add_participant_if_absent
 
 JOKE_AGENTS = {}  # agent_id -> JokeAgent
@@ -50,16 +49,13 @@ def _resolve_agent(agent_id=None, session_id=None):
     if agent_id and agent_id in AGENT_LATEST:
         sid = AGENT_LATEST[agent_id]
         agent = SESSIONS.get(sid)
-    if agent:
-        return sid, agent
+        if agent:
+            return sid, agent
     # stale mapping; fall through to legacy
     # Legacy: single-agent map
     if agent_id and agent_id in JOKE_AGENTS:
         return None, JOKE_AGENTS.get(agent_id)
     return None, None
-
-
-
 
 
 async def environment_reload_handler(db, async_tbl, action):
@@ -72,11 +68,6 @@ async def environment_reload_handler(db, async_tbl, action):
             await mark_action_processed_async(async_tbl, action_id)
 
 # Agent action handlers
-
-
-
-
-
 
 async def agent_create(db, async_tbl, action):
     import functools, uuid
@@ -102,42 +93,32 @@ async def agent_create(db, async_tbl, action):
             print(f"Session {session_id} already exists; skipping.")
             return
 
-
-
         if agent_type == "PersonaAgent":
             agent = PersonaAgent(
                 agent_id,
                 session_id,
-                conversation_id=conversation_id,
-                persona_config=persona_config,
-                loop_interval=payload.get("loop_interval", 1.5),
                 state_updater=functools.partial(upsert_state_async, session_id=session_id),
                 steps_appender=functools.partial(
                     __import__("store.steps_async", fromlist=["append_step_async"]).append_step_async,
                     agent_id,
                     session_id=session_id
                 ),
+                conversation_id=conversation_id,
+                persona_config=persona_config,
+                loop_interval=payload.get("loop_interval", 1.5),
             )
         else:
             agent = JokeAgent(
                 agent_id,
                 session_id,
-                initial_subject=initial_subject,
                 state_updater=functools.partial(upsert_state_async, session_id=session_id),
                 steps_appender=functools.partial(
-                # append_step_async signature (agent_id, iteration, **fields)
-                __import__("store.steps_async", fromlist=["append_step_async"]).append_step_async,
-                agent_id,
-                session_id=session_id
+                    __import__("store.steps_async", fromlist=["append_step_async"]).append_step_async,
+                    agent_id,
+                    session_id=session_id
                 ),
+                initial_subject=initial_subject,
             )
-
-
-
-
-
-
-
 
 
         # Register
@@ -145,19 +126,29 @@ async def agent_create(db, async_tbl, action):
         AGENT_LATEST[agent_id] = session_id
         JOKE_AGENTS[agent_id] = agent  # legacy compatibility
 
-
         try:
             if agent_type == "PersonaAgent" and conversation_id:
                 add_participant_if_absent(conversation_id, agent_id, session_id, persona_config)
+
+
+                from store.conversations import get_conversation_messages_and_participants
+                from queue_imp import agent_interrupt_action
+
+                if agent_type == "PersonaAgent" and conversation_id:
+                    snap = get_conversation_messages_and_participants(conversation_id)
+                    parts = snap.get("participants", [])
+                    for p in parts:
+                        aid = p.get("agent_id")
+                        sid = p.get("session_id")
+                        if not aid or not sid or aid == agent_id:
+                            continue
+                        agent_interrupt_action(aid, sid, "system", {"type": "participants_changed"})
+
                 
         except Exception as e:
             print(f"add_participant failed: {e}")
 
-
         task = asyncio.create_task(agent.run())
-
-
-
 
         def _log_task_result(t):
             import traceback, asyncio
@@ -173,22 +164,14 @@ async def agent_create(db, async_tbl, action):
         task.add_done_callback(_log_task_result)
         agent._task = task
 
-
-
         atype = "PersonaAgent" if agent_type == "PersonaAgent" else "JokeAgent"
         print(f"Agent {agent_id}/{session_id}: launching {atype} loop"
         + (f" (conversation={conversation_id})" if agent_type == "PersonaAgent" else f" (subject={initial_subject})"))
-
-
 
     finally:
         if action_id:
             await mark_action_processed_async(async_tbl, action_id)
             print(f"Marked action_id {action_id} as processed.")
-
-
-
-
 
 
 async def agent_destroy(db, async_tbl, action):
@@ -236,8 +219,6 @@ async def agent_destroy(db, async_tbl, action):
             await mark_action_processed_async(async_tbl, action_id)
 
 
-
-
 async def agent_pause(db, async_tbl, action):
     action_id = action.get("action_id")
     try:
@@ -254,7 +235,6 @@ async def agent_pause(db, async_tbl, action):
     finally:
         if action_id:
             await mark_action_processed_async(async_tbl, action_id)
-
 
 
 async def agent_resume(db, async_tbl, action):
@@ -300,10 +280,6 @@ async def agent_interrupt(db, async_tbl, action):
 
 
 
-
-
-
-
 ACTION_HANDLERS = {
 'create_agent': agent_create,
 'agent_destroy': agent_destroy,
@@ -313,9 +289,7 @@ ACTION_HANDLERS = {
 'environment_reload': environment_reload_handler,
 }
 
-
 IN_FLIGHT_ACTION_IDS = set()
-
 
 async def handle_actions(db, async_tbl, actions):
     for action in actions:
@@ -353,25 +327,3 @@ async def poll_lancedb_for_actions(db, async_tbl):
     return result.to_dict(orient="records")
     
 
-'''
-async def poll_lancedb_for_actions(db, async_tbl):
-    
-
-    await asyncio.sleep(5)
-    cnt = poll_lancedb_for_actions.counter
-    poll_lancedb_for_actions.counter += 1
-    if cnt % 3 == 0:
-        print("c")
-        async_tbl = await db.open_table(QUEUE_NAME)
-
-        result = await async_tbl.query().where("processed == False").to_pandas()
-        return result.to_dict(orient="records")  
-    return []
-
-poll_lancedb_for_actions.counter = 0
-'''
-
-
-
-
-            

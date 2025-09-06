@@ -1,7 +1,6 @@
 from flask import jsonify
 from flask import Flask, request
 
-from logic.agents_logic import list_agent_configs
 from store.sessions import list_sessions_for_agent as store_list_sessions_for_agent, get_last_step_for_session_id as store_get_last_step_for_session_id
 from store.sessions import get_agent_id_for_session_id
 
@@ -9,8 +8,6 @@ from queue_imp import stop_agent as store_stop_agent, agent_create as store_crea
 from queue_imp import agent_pause_action as store_pause_agent, agent_resume_action as store_resume_agent
 from queue_imp import agent_interrupt_action as store_interrupt_agent
 
-def list_agents_endpoint():
-    return jsonify(list_agent_configs())
 
 def list_sessions_for_agent():
 

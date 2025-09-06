@@ -6,7 +6,9 @@ from flask import request
 
 from .static_endpoints import serve_plugin_file
 
-from .agents_endpoints import list_agents_endpoint, list_sessions_for_agent, get_last_step_for_session_id
+from .agent_configs_endpoints import list_agent_configs, upsert_agent_config
+
+from .agents_endpoints import list_sessions_for_agent, get_last_step_for_session_id
 from .agents_endpoints import create_agent, stop_agent
 from .agents_endpoints import pause_agent, resume_agent
 from .agents_endpoints import interrupt_agent
@@ -16,6 +18,7 @@ from .form_api import prompt_to_schema_endpoint
 from .not_impl import not_implemented
 
 from .conversations_endpoints import list_conversations_endpoint, conversation_messages_endpoint
+from goal_agent import api_generate_task_graph
 
 # 1. All your websocket handlers go here.
 def ws_test(data, socketio, sid):
@@ -45,9 +48,13 @@ MAP_WS_FUNCS = {
 MAP_HTTP_FUNCS = [
 
     ['/plugins/<path:subpath>', serve_plugin_file, ['GET']],
-    ["/api/list-agent-configs",list_agents_endpoint , ['GET']],
+    
     ["/api/prompt-to-schema", prompt_to_schema_endpoint, ['POST']],
     ["/api/chat", chat_endpoint, ['POST']],
+
+    ["/api/list-agent-configs",list_agent_configs , ['GET']],
+    ["/api/upsert-agent-config", upsert_agent_config, ['POST']],
+
     ["/api/list-sessions-for-agent",list_sessions_for_agent , ['GET']],
     ["/api/get-last-step-for-session_id", get_last_step_for_session_id, ['GET']],
 
@@ -58,6 +65,7 @@ MAP_HTTP_FUNCS = [
     ["/api/interrupt-agent",interrupt_agent , ['POST']],    
 
     ["/api/conversations", list_conversations_endpoint, ['GET']],
-    ["/api/conversation-messages", conversation_messages_endpoint, ['GET']],  
+    ["/api/conversation-messages", conversation_messages_endpoint, ['GET']],
+    ["/api/generate-task-graph",api_generate_task_graph ,['GET', 'POST']]  
     # ...add more
 ]

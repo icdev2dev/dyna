@@ -20,14 +20,22 @@ from .globals import DO_NOT_USE_DIRECTLY_UNLESS_YOU_KNOW_WHAT_YOURE_DOING_RUNTIM
 class TypeBuilder(type_builder.TypeBuilder):
     def __init__(self):
         super().__init__(classes=set(
-          ["MonikerData","MonikerGuidance","MonikerState","MonikerStepFrameIn","MonikerStepFrameOut","Response","StepFrameIn","StepFrameOut",]
+          ["Completion","ConstrainedTask","ConstrainedTaskGraph","DataEdge","Port","Response","StepFrameIn","StepFrameOut","Task","TaskGraph",]
         ), enums=set(
-          ["GenericStepOutControl","GenericStepOutStatus",]
+          ["CompletionPolicy","ExecutionMode","GenericStepOutControl","GenericStepOutStatus","RegisteredWindow","TaskType",]
         ), runtime=DO_NOT_USE_DIRECTLY_UNLESS_YOU_KNOW_WHAT_YOURE_DOING_RUNTIME)
 
     # #########################################################################
-    # Generated enums 2
+    # Generated enums 6
     # #########################################################################
+
+    @property
+    def CompletionPolicy(self) -> "CompletionPolicyBuilder":
+        return CompletionPolicyBuilder(self)
+
+    @property
+    def ExecutionMode(self) -> "ExecutionModeBuilder":
+        return ExecutionModeBuilder(self)
 
     @property
     def GenericStepOutControl(self) -> "GenericStepOutControlViewer":
@@ -37,30 +45,38 @@ class TypeBuilder(type_builder.TypeBuilder):
     def GenericStepOutStatus(self) -> "GenericStepOutStatusViewer":
         return GenericStepOutStatusViewer(self)
 
+    @property
+    def RegisteredWindow(self) -> "RegisteredWindowViewer":
+        return RegisteredWindowViewer(self)
+
+    @property
+    def TaskType(self) -> "TaskTypeViewer":
+        return TaskTypeViewer(self)
+
 
     # #########################################################################
-    # Generated classes 8
+    # Generated classes 10
     # #########################################################################
 
     @property
-    def MonikerData(self) -> "MonikerDataViewer":
-        return MonikerDataViewer(self)
+    def Completion(self) -> "CompletionViewer":
+        return CompletionViewer(self)
 
     @property
-    def MonikerGuidance(self) -> "MonikerGuidanceViewer":
-        return MonikerGuidanceViewer(self)
+    def ConstrainedTask(self) -> "ConstrainedTaskViewer":
+        return ConstrainedTaskViewer(self)
 
     @property
-    def MonikerState(self) -> "MonikerStateViewer":
-        return MonikerStateViewer(self)
+    def ConstrainedTaskGraph(self) -> "ConstrainedTaskGraphViewer":
+        return ConstrainedTaskGraphViewer(self)
 
     @property
-    def MonikerStepFrameIn(self) -> "MonikerStepFrameInViewer":
-        return MonikerStepFrameInViewer(self)
+    def DataEdge(self) -> "DataEdgeViewer":
+        return DataEdgeViewer(self)
 
     @property
-    def MonikerStepFrameOut(self) -> "MonikerStepFrameOutViewer":
-        return MonikerStepFrameOutViewer(self)
+    def Port(self) -> "PortViewer":
+        return PortViewer(self)
 
     @property
     def Response(self) -> "ResponseViewer":
@@ -74,11 +90,127 @@ class TypeBuilder(type_builder.TypeBuilder):
     def StepFrameOut(self) -> "StepFrameOutViewer":
         return StepFrameOutViewer(self)
 
+    @property
+    def Task(self) -> "TaskViewer":
+        return TaskViewer(self)
+
+    @property
+    def TaskGraph(self) -> "TaskGraphViewer":
+        return TaskGraphViewer(self)
+
 
 
 # #########################################################################
-# Generated enums 2
+# Generated enums 6
 # #########################################################################
+
+class CompletionPolicyAst:
+    def __init__(self, tb: type_builder.TypeBuilder):
+        _tb = tb._tb # type: ignore (we know how to use this private attribute)
+        self._bldr = _tb.enum("CompletionPolicy")
+        self._values: typing.Set[str] = set([  "AllSubtasks",  "AnySubtask",  "KOfN",  ])
+        self._vals = CompletionPolicyValues(self._bldr, self._values)
+
+    def type(self) -> baml_py.FieldType:
+        return self._bldr.field()
+
+    @property
+    def values(self) -> "CompletionPolicyValues":
+        return self._vals
+
+
+class CompletionPolicyBuilder(CompletionPolicyAst):
+    def __init__(self, tb: type_builder.TypeBuilder):
+        super().__init__(tb)
+
+    
+    def list_values(self) -> typing.List[typing.Tuple[str, baml_py.EnumValueBuilder]]:
+        return [(name, self._bldr.value(name)) for name in self._values]
+
+    def add_value(self, name: str) -> baml_py.EnumValueBuilder:
+        if name in self._values:
+            raise ValueError(f"Value {name} already exists.")
+        return self._bldr.value(name)
+    
+
+class CompletionPolicyValues:
+    def __init__(self, enum_bldr: baml_py.EnumBuilder, values: typing.Set[str]):
+        self.__bldr = enum_bldr
+        self.__values = values # type: ignore (we know how to use this private attribute) # noqa: F821
+
+    
+    def __getattr__(self, name: str) -> baml_py.EnumValueBuilder:
+        if name not in self.__values:
+            raise AttributeError(f"Value {name} not found.")
+        return self.__bldr.value(name)
+
+    
+    @property
+    def AllSubtasks(self) -> baml_py.EnumValueBuilder:
+        return self.__bldr.value("AllSubtasks")
+    
+    @property
+    def AnySubtask(self) -> baml_py.EnumValueBuilder:
+        return self.__bldr.value("AnySubtask")
+    
+    @property
+    def KOfN(self) -> baml_py.EnumValueBuilder:
+        return self.__bldr.value("KOfN")
+    
+    
+
+
+class ExecutionModeAst:
+    def __init__(self, tb: type_builder.TypeBuilder):
+        _tb = tb._tb # type: ignore (we know how to use this private attribute)
+        self._bldr = _tb.enum("ExecutionMode")
+        self._values: typing.Set[str] = set([  "Sequential",  "Parallel",  ])
+        self._vals = ExecutionModeValues(self._bldr, self._values)
+
+    def type(self) -> baml_py.FieldType:
+        return self._bldr.field()
+
+    @property
+    def values(self) -> "ExecutionModeValues":
+        return self._vals
+
+
+class ExecutionModeBuilder(ExecutionModeAst):
+    def __init__(self, tb: type_builder.TypeBuilder):
+        super().__init__(tb)
+
+    
+    def list_values(self) -> typing.List[typing.Tuple[str, baml_py.EnumValueBuilder]]:
+        return [(name, self._bldr.value(name)) for name in self._values]
+
+    def add_value(self, name: str) -> baml_py.EnumValueBuilder:
+        if name in self._values:
+            raise ValueError(f"Value {name} already exists.")
+        return self._bldr.value(name)
+    
+
+class ExecutionModeValues:
+    def __init__(self, enum_bldr: baml_py.EnumBuilder, values: typing.Set[str]):
+        self.__bldr = enum_bldr
+        self.__values = values # type: ignore (we know how to use this private attribute) # noqa: F821
+
+    
+    def __getattr__(self, name: str) -> baml_py.EnumValueBuilder:
+        if name not in self.__values:
+            raise AttributeError(f"Value {name} not found.")
+        return self.__bldr.value(name)
+
+    
+    @property
+    def Sequential(self) -> baml_py.EnumValueBuilder:
+        return self.__bldr.value("Sequential")
+    
+    @property
+    def Parallel(self) -> baml_py.EnumValueBuilder:
+        return self.__bldr.value("Parallel")
+    
+    
+
 
 class GenericStepOutControlAst:
     def __init__(self, tb: type_builder.TypeBuilder):
@@ -172,27 +304,119 @@ class GenericStepOutStatusValues:
     
 
 
+class RegisteredWindowAst:
+    def __init__(self, tb: type_builder.TypeBuilder):
+        _tb = tb._tb # type: ignore (we know how to use this private attribute)
+        self._bldr = _tb.enum("RegisteredWindow")
+        self._values: typing.Set[str] = set([  "AgentConfigsWindow",  "AgentsListWindow",  "ConversationsWindow",  ])
+        self._vals = RegisteredWindowValues(self._bldr, self._values)
+
+    def type(self) -> baml_py.FieldType:
+        return self._bldr.field()
+
+    @property
+    def values(self) -> "RegisteredWindowValues":
+        return self._vals
+
+
+class RegisteredWindowViewer(RegisteredWindowAst):
+    def __init__(self, tb: type_builder.TypeBuilder):
+        super().__init__(tb)
+
+    
+    def list_values(self) -> typing.List[typing.Tuple[str, type_builder.EnumValueViewer]]:
+        return [(name, type_builder.EnumValueViewer(self._bldr.value(name))) for name in self._values]
+    
+
+class RegisteredWindowValues:
+    def __init__(self, enum_bldr: baml_py.EnumBuilder, values: typing.Set[str]):
+        self.__bldr = enum_bldr
+        self.__values = values # type: ignore (we know how to use this private attribute) # noqa: F821
+
+    
+    
+    @property
+    def AgentConfigsWindow(self) -> type_builder.EnumValueViewer:
+        return type_builder.EnumValueViewer(self.__bldr.value("AgentConfigsWindow"))
+    
+    @property
+    def AgentsListWindow(self) -> type_builder.EnumValueViewer:
+        return type_builder.EnumValueViewer(self.__bldr.value("AgentsListWindow"))
+    
+    @property
+    def ConversationsWindow(self) -> type_builder.EnumValueViewer:
+        return type_builder.EnumValueViewer(self.__bldr.value("ConversationsWindow"))
+    
+    
+
+
+class TaskTypeAst:
+    def __init__(self, tb: type_builder.TypeBuilder):
+        _tb = tb._tb # type: ignore (we know how to use this private attribute)
+        self._bldr = _tb.enum("TaskType")
+        self._values: typing.Set[str] = set([  "NA",  "TRANSLATION",  "LOCALIZATION",  ])
+        self._vals = TaskTypeValues(self._bldr, self._values)
+
+    def type(self) -> baml_py.FieldType:
+        return self._bldr.field()
+
+    @property
+    def values(self) -> "TaskTypeValues":
+        return self._vals
+
+
+class TaskTypeViewer(TaskTypeAst):
+    def __init__(self, tb: type_builder.TypeBuilder):
+        super().__init__(tb)
+
+    
+    def list_values(self) -> typing.List[typing.Tuple[str, type_builder.EnumValueViewer]]:
+        return [(name, type_builder.EnumValueViewer(self._bldr.value(name))) for name in self._values]
+    
+
+class TaskTypeValues:
+    def __init__(self, enum_bldr: baml_py.EnumBuilder, values: typing.Set[str]):
+        self.__bldr = enum_bldr
+        self.__values = values # type: ignore (we know how to use this private attribute) # noqa: F821
+
+    
+    
+    @property
+    def NA(self) -> type_builder.EnumValueViewer:
+        return type_builder.EnumValueViewer(self.__bldr.value("NA"))
+    
+    @property
+    def TRANSLATION(self) -> type_builder.EnumValueViewer:
+        return type_builder.EnumValueViewer(self.__bldr.value("TRANSLATION"))
+    
+    @property
+    def LOCALIZATION(self) -> type_builder.EnumValueViewer:
+        return type_builder.EnumValueViewer(self.__bldr.value("LOCALIZATION"))
+    
+    
+
+
 
 # #########################################################################
-# Generated classes 8
+# Generated classes 10
 # #########################################################################
 
-class MonikerDataAst:
+class CompletionAst:
     def __init__(self, tb: type_builder.TypeBuilder):
         _tb = tb._tb # type: ignore (we know how to use this private attribute)
-        self._bldr = _tb.class_("MonikerData")
-        self._properties: typing.Set[str] = set([  "topic",  ])
-        self._props = MonikerDataProperties(self._bldr, self._properties)
+        self._bldr = _tb.class_("Completion")
+        self._properties: typing.Set[str] = set([  "policy",  "k",  ])
+        self._props = CompletionProperties(self._bldr, self._properties)
 
     def type(self) -> baml_py.FieldType:
         return self._bldr.field()
 
     @property
-    def props(self) -> "MonikerDataProperties":
+    def props(self) -> "CompletionProperties":
         return self._props
 
 
-class MonikerDataViewer(MonikerDataAst):
+class CompletionViewer(CompletionAst):
     def __init__(self, tb: type_builder.TypeBuilder):
         super().__init__(tb)
 
@@ -202,7 +426,7 @@ class MonikerDataViewer(MonikerDataAst):
     
 
 
-class MonikerDataProperties:
+class CompletionProperties:
     def __init__(self, bldr: baml_py.ClassBuilder, properties: typing.Set[str]):
         self.__bldr = bldr
         self.__properties = properties # type: ignore (we know how to use this private attribute) # noqa: F821
@@ -210,28 +434,32 @@ class MonikerDataProperties:
     
     
     @property
-    def topic(self) -> type_builder.ClassPropertyViewer:
-        return type_builder.ClassPropertyViewer(self.__bldr.property("topic"))
+    def policy(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("policy"))
+    
+    @property
+    def k(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("k"))
     
     
 
 
-class MonikerGuidanceAst:
+class ConstrainedTaskAst:
     def __init__(self, tb: type_builder.TypeBuilder):
         _tb = tb._tb # type: ignore (we know how to use this private attribute)
-        self._bldr = _tb.class_("MonikerGuidance")
-        self._properties: typing.Set[str] = set([  "topic",  "style",  ])
-        self._props = MonikerGuidanceProperties(self._bldr, self._properties)
+        self._bldr = _tb.class_("ConstrainedTask")
+        self._properties: typing.Set[str] = set([  "id",  "title",  "description",  "taskType",  "executionMode",  "subtasks",  "dependsOn",  "inputPorts",  "outputPorts",  "completion",  "agentId",  "guard",  ])
+        self._props = ConstrainedTaskProperties(self._bldr, self._properties)
 
     def type(self) -> baml_py.FieldType:
         return self._bldr.field()
 
     @property
-    def props(self) -> "MonikerGuidanceProperties":
+    def props(self) -> "ConstrainedTaskProperties":
         return self._props
 
 
-class MonikerGuidanceViewer(MonikerGuidanceAst):
+class ConstrainedTaskViewer(ConstrainedTaskAst):
     def __init__(self, tb: type_builder.TypeBuilder):
         super().__init__(tb)
 
@@ -241,7 +469,7 @@ class MonikerGuidanceViewer(MonikerGuidanceAst):
     
 
 
-class MonikerGuidanceProperties:
+class ConstrainedTaskProperties:
     def __init__(self, bldr: baml_py.ClassBuilder, properties: typing.Set[str]):
         self.__bldr = bldr
         self.__properties = properties # type: ignore (we know how to use this private attribute) # noqa: F821
@@ -249,32 +477,72 @@ class MonikerGuidanceProperties:
     
     
     @property
-    def topic(self) -> type_builder.ClassPropertyViewer:
-        return type_builder.ClassPropertyViewer(self.__bldr.property("topic"))
+    def id(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("id"))
     
     @property
-    def style(self) -> type_builder.ClassPropertyViewer:
-        return type_builder.ClassPropertyViewer(self.__bldr.property("style"))
+    def title(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("title"))
+    
+    @property
+    def description(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("description"))
+    
+    @property
+    def taskType(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("taskType"))
+    
+    @property
+    def executionMode(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("executionMode"))
+    
+    @property
+    def subtasks(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("subtasks"))
+    
+    @property
+    def dependsOn(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("dependsOn"))
+    
+    @property
+    def inputPorts(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("inputPorts"))
+    
+    @property
+    def outputPorts(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("outputPorts"))
+    
+    @property
+    def completion(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("completion"))
+    
+    @property
+    def agentId(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("agentId"))
+    
+    @property
+    def guard(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("guard"))
     
     
 
 
-class MonikerStateAst:
+class ConstrainedTaskGraphAst:
     def __init__(self, tb: type_builder.TypeBuilder):
         _tb = tb._tb # type: ignore (we know how to use this private attribute)
-        self._bldr = _tb.class_("MonikerState")
-        self._properties: typing.Set[str] = set([  "topic",  "last_style",  "last_output",  ])
-        self._props = MonikerStateProperties(self._bldr, self._properties)
+        self._bldr = _tb.class_("ConstrainedTaskGraph")
+        self._properties: typing.Set[str] = set([  "tasks",  "roots",  "edges",  ])
+        self._props = ConstrainedTaskGraphProperties(self._bldr, self._properties)
 
     def type(self) -> baml_py.FieldType:
         return self._bldr.field()
 
     @property
-    def props(self) -> "MonikerStateProperties":
+    def props(self) -> "ConstrainedTaskGraphProperties":
         return self._props
 
 
-class MonikerStateViewer(MonikerStateAst):
+class ConstrainedTaskGraphViewer(ConstrainedTaskGraphAst):
     def __init__(self, tb: type_builder.TypeBuilder):
         super().__init__(tb)
 
@@ -284,7 +552,7 @@ class MonikerStateViewer(MonikerStateAst):
     
 
 
-class MonikerStateProperties:
+class ConstrainedTaskGraphProperties:
     def __init__(self, bldr: baml_py.ClassBuilder, properties: typing.Set[str]):
         self.__bldr = bldr
         self.__properties = properties # type: ignore (we know how to use this private attribute) # noqa: F821
@@ -292,36 +560,36 @@ class MonikerStateProperties:
     
     
     @property
-    def topic(self) -> type_builder.ClassPropertyViewer:
-        return type_builder.ClassPropertyViewer(self.__bldr.property("topic"))
+    def tasks(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("tasks"))
     
     @property
-    def last_style(self) -> type_builder.ClassPropertyViewer:
-        return type_builder.ClassPropertyViewer(self.__bldr.property("last_style"))
+    def roots(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("roots"))
     
     @property
-    def last_output(self) -> type_builder.ClassPropertyViewer:
-        return type_builder.ClassPropertyViewer(self.__bldr.property("last_output"))
+    def edges(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("edges"))
     
     
 
 
-class MonikerStepFrameInAst:
+class DataEdgeAst:
     def __init__(self, tb: type_builder.TypeBuilder):
         _tb = tb._tb # type: ignore (we know how to use this private attribute)
-        self._bldr = _tb.class_("MonikerStepFrameIn")
-        self._properties: typing.Set[str] = set([  "step",  "state",  "guidance",  ])
-        self._props = MonikerStepFrameInProperties(self._bldr, self._properties)
+        self._bldr = _tb.class_("DataEdge")
+        self._properties: typing.Set[str] = set([  "fromTaskId",  "fromPort",  "toTaskId",  "toPort",  ])
+        self._props = DataEdgeProperties(self._bldr, self._properties)
 
     def type(self) -> baml_py.FieldType:
         return self._bldr.field()
 
     @property
-    def props(self) -> "MonikerStepFrameInProperties":
+    def props(self) -> "DataEdgeProperties":
         return self._props
 
 
-class MonikerStepFrameInViewer(MonikerStepFrameInAst):
+class DataEdgeViewer(DataEdgeAst):
     def __init__(self, tb: type_builder.TypeBuilder):
         super().__init__(tb)
 
@@ -331,7 +599,7 @@ class MonikerStepFrameInViewer(MonikerStepFrameInAst):
     
 
 
-class MonikerStepFrameInProperties:
+class DataEdgeProperties:
     def __init__(self, bldr: baml_py.ClassBuilder, properties: typing.Set[str]):
         self.__bldr = bldr
         self.__properties = properties # type: ignore (we know how to use this private attribute) # noqa: F821
@@ -339,36 +607,40 @@ class MonikerStepFrameInProperties:
     
     
     @property
-    def step(self) -> type_builder.ClassPropertyViewer:
-        return type_builder.ClassPropertyViewer(self.__bldr.property("step"))
+    def fromTaskId(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("fromTaskId"))
     
     @property
-    def state(self) -> type_builder.ClassPropertyViewer:
-        return type_builder.ClassPropertyViewer(self.__bldr.property("state"))
+    def fromPort(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("fromPort"))
     
     @property
-    def guidance(self) -> type_builder.ClassPropertyViewer:
-        return type_builder.ClassPropertyViewer(self.__bldr.property("guidance"))
+    def toTaskId(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("toTaskId"))
+    
+    @property
+    def toPort(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("toPort"))
     
     
 
 
-class MonikerStepFrameOutAst:
+class PortAst:
     def __init__(self, tb: type_builder.TypeBuilder):
         _tb = tb._tb # type: ignore (we know how to use this private attribute)
-        self._bldr = _tb.class_("MonikerStepFrameOut")
-        self._properties: typing.Set[str] = set([  "step",  "state",  "next_step",  "text",  "data",  "done",  "notes",  ])
-        self._props = MonikerStepFrameOutProperties(self._bldr, self._properties)
+        self._bldr = _tb.class_("Port")
+        self._properties: typing.Set[str] = set([  "name",  "type",  "required",  ])
+        self._props = PortProperties(self._bldr, self._properties)
 
     def type(self) -> baml_py.FieldType:
         return self._bldr.field()
 
     @property
-    def props(self) -> "MonikerStepFrameOutProperties":
+    def props(self) -> "PortProperties":
         return self._props
 
 
-class MonikerStepFrameOutViewer(MonikerStepFrameOutAst):
+class PortViewer(PortAst):
     def __init__(self, tb: type_builder.TypeBuilder):
         super().__init__(tb)
 
@@ -378,7 +650,7 @@ class MonikerStepFrameOutViewer(MonikerStepFrameOutAst):
     
 
 
-class MonikerStepFrameOutProperties:
+class PortProperties:
     def __init__(self, bldr: baml_py.ClassBuilder, properties: typing.Set[str]):
         self.__bldr = bldr
         self.__properties = properties # type: ignore (we know how to use this private attribute) # noqa: F821
@@ -386,32 +658,16 @@ class MonikerStepFrameOutProperties:
     
     
     @property
-    def step(self) -> type_builder.ClassPropertyViewer:
-        return type_builder.ClassPropertyViewer(self.__bldr.property("step"))
+    def name(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("name"))
     
     @property
-    def state(self) -> type_builder.ClassPropertyViewer:
-        return type_builder.ClassPropertyViewer(self.__bldr.property("state"))
+    def type(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("type"))
     
     @property
-    def next_step(self) -> type_builder.ClassPropertyViewer:
-        return type_builder.ClassPropertyViewer(self.__bldr.property("next_step"))
-    
-    @property
-    def text(self) -> type_builder.ClassPropertyViewer:
-        return type_builder.ClassPropertyViewer(self.__bldr.property("text"))
-    
-    @property
-    def data(self) -> type_builder.ClassPropertyViewer:
-        return type_builder.ClassPropertyViewer(self.__bldr.property("data"))
-    
-    @property
-    def done(self) -> type_builder.ClassPropertyViewer:
-        return type_builder.ClassPropertyViewer(self.__bldr.property("done"))
-    
-    @property
-    def notes(self) -> type_builder.ClassPropertyViewer:
-        return type_builder.ClassPropertyViewer(self.__bldr.property("notes"))
+    def required(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("required"))
     
     
 
@@ -561,6 +817,132 @@ class StepFrameOutProperties:
     @property
     def context_delta(self) -> type_builder.ClassPropertyViewer:
         return type_builder.ClassPropertyViewer(self.__bldr.property("context_delta"))
+    
+    
+
+
+class TaskAst:
+    def __init__(self, tb: type_builder.TypeBuilder):
+        _tb = tb._tb # type: ignore (we know how to use this private attribute)
+        self._bldr = _tb.class_("Task")
+        self._properties: typing.Set[str] = set([  "id",  "title",  "description",  "executionMode",  "subtasks",  "dependsOn",  "inputPorts",  "outputPorts",  "completion",  "agentId",  "guard",  ])
+        self._props = TaskProperties(self._bldr, self._properties)
+
+    def type(self) -> baml_py.FieldType:
+        return self._bldr.field()
+
+    @property
+    def props(self) -> "TaskProperties":
+        return self._props
+
+
+class TaskViewer(TaskAst):
+    def __init__(self, tb: type_builder.TypeBuilder):
+        super().__init__(tb)
+
+    
+    def list_properties(self) -> typing.List[typing.Tuple[str, type_builder.ClassPropertyViewer]]:
+        return [(name, type_builder.ClassPropertyViewer(self._bldr.property(name))) for name in self._properties]
+    
+
+
+class TaskProperties:
+    def __init__(self, bldr: baml_py.ClassBuilder, properties: typing.Set[str]):
+        self.__bldr = bldr
+        self.__properties = properties # type: ignore (we know how to use this private attribute) # noqa: F821
+
+    
+    
+    @property
+    def id(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("id"))
+    
+    @property
+    def title(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("title"))
+    
+    @property
+    def description(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("description"))
+    
+    @property
+    def executionMode(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("executionMode"))
+    
+    @property
+    def subtasks(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("subtasks"))
+    
+    @property
+    def dependsOn(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("dependsOn"))
+    
+    @property
+    def inputPorts(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("inputPorts"))
+    
+    @property
+    def outputPorts(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("outputPorts"))
+    
+    @property
+    def completion(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("completion"))
+    
+    @property
+    def agentId(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("agentId"))
+    
+    @property
+    def guard(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("guard"))
+    
+    
+
+
+class TaskGraphAst:
+    def __init__(self, tb: type_builder.TypeBuilder):
+        _tb = tb._tb # type: ignore (we know how to use this private attribute)
+        self._bldr = _tb.class_("TaskGraph")
+        self._properties: typing.Set[str] = set([  "tasks",  "roots",  "edges",  ])
+        self._props = TaskGraphProperties(self._bldr, self._properties)
+
+    def type(self) -> baml_py.FieldType:
+        return self._bldr.field()
+
+    @property
+    def props(self) -> "TaskGraphProperties":
+        return self._props
+
+
+class TaskGraphViewer(TaskGraphAst):
+    def __init__(self, tb: type_builder.TypeBuilder):
+        super().__init__(tb)
+
+    
+    def list_properties(self) -> typing.List[typing.Tuple[str, type_builder.ClassPropertyViewer]]:
+        return [(name, type_builder.ClassPropertyViewer(self._bldr.property(name))) for name in self._properties]
+    
+
+
+class TaskGraphProperties:
+    def __init__(self, bldr: baml_py.ClassBuilder, properties: typing.Set[str]):
+        self.__bldr = bldr
+        self.__properties = properties # type: ignore (we know how to use this private attribute) # noqa: F821
+
+    
+    
+    @property
+    def tasks(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("tasks"))
+    
+    @property
+    def roots(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("roots"))
+    
+    @property
+    def edges(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("edges"))
     
     
 

@@ -32,11 +32,7 @@ class LoopingAgentBase(AgentBase, StopMixin):
         guidance_interpreter: Optional[Callable[[GuidanceInput], Awaitable[GuidanceDict]]] = None,
         persist_guidance_raw: bool = True,
         persist_guidance_normalized: bool = True,
-
-
-
     ):
-        
         super().__init__(agent_id)
         self.session_id = session_id
         self._state_updater = state_updater
@@ -292,12 +288,6 @@ class LoopingAgentBase(AgentBase, StopMixin):
             )
         except Exception as e:
             print(f"{self.__class__.__name__} {self.agent_id}: steps_appender error: {e}")
-
-
-
-
-
-
 
 
 

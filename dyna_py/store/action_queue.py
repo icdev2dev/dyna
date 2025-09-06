@@ -1,7 +1,7 @@
 
 import lancedb
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from schemas import AGENTS_URI, QUEUE_NAME
 
@@ -28,7 +28,7 @@ def create_action(
     record = {
         "action_id": action_id or str(uuid.uuid4()),
         "type": action_type,
-        "created_at": created_at or datetime.now().isoformat(),
+        "created_at": created_at or datetime.now(timezone.utc).isoformat(),
         "actor": actor,
         "processed": processed,
         "urgency": urgency,

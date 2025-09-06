@@ -204,10 +204,60 @@
 
 
 
+        if (config.kind === 'agentConfigs') {
+            const win = {
+                id,
+                kind: 'agentConfigs',
+                title: config.title ?? 'Agent Configs',
+                position: pos,
+                size,
+                z: ++zCounter,
+                persist
+            };
+            windows = [...windows, win];
+            return id;
+        }
 
 
 
 
+
+
+
+
+
+         if (config.kind === 'goalAgentRun') {
+    const win = {
+      id,
+      kind: 'goalAgentRun',
+      title: config.title ?? 'Launch Run — GoalAgent',
+      position: pos,
+      size,
+      z: ++zCounter,
+      persist,
+      seedPrompt: config.seedPrompt ?? ''
+    };
+    windows = [...windows, win];
+    return id;
+  }
+
+  if (config.kind === 'jokeAgentRun') {
+    const win = {
+      id,
+      kind: 'jokeAgentRun',
+      title: config.title ?? 'Launch Run — JokeAgent',
+      position: pos,
+      size,
+      z: ++zCounter,
+      persist,
+      agentId: config.agentId ?? '',
+      seedPrompt: config.seedPrompt ?? ''
+    };
+    windows = [...windows, win];
+    return id;
+  }
+
+ 
 
 
 
@@ -372,6 +422,39 @@ function handleShowAgentRuns(e) {
 
 
 
+
+
+function handleOpenAgentRun(e) {
+    const agentType = (e?.detail?.agent_type || '').toLowerCase();
+    const agentId = e?.detail?.agent_id || '';
+    const seedPrompt = e?.detail?.prompt || '';
+    if (agentType === 'goalagent') {
+        spawn({
+        kind: 'goalAgentRun',
+        title: 'Launch Run — GoalAgent',
+        persist: 'keep',
+        size: { w: 1100, h: 680 },
+        position: { x: 60, y: 60 },
+        seedPrompt
+        });
+    } 
+    else if (agentType === 'jokeagent') {
+        spawn({
+        kind: 'jokeAgentRun',
+        title: 'Launch Run — JokeAgent',
+        persist: 'keep',
+        size: { w: 560, h: 380 },
+        position: { x: 80, y: 80 },
+        agentId,
+        seedPrompt
+        });
+    } 
+    else {
+        alert('This agent type is not launchable from here.');
+    }
+}
+
+
 function handleShowRunDetail(e) {
 const aid = e?.detail?.agent_id;
 const sid = e?.detail?.session_id;
@@ -386,6 +469,21 @@ run: { agent_id:aid, session_id:sid }
 }
 
 
+
+
+function handleOpenTaskGraph(e) {
+    const prompt = e?.detail?.prompt ?? '';
+    spawn({
+        kind: 'taskGraph',
+        title: 'GoalAgent Task Graph',
+        persist: 'keep',
+        size: { w: 1000, h: 640 },
+        position: { x: 60, y: 60 },
+        // pass to TaskGraphWindow
+        initialPrompt: prompt,
+        autoGenerate: true
+    });
+}
 
 
 function handleOpenConversation(e) {
@@ -416,17 +514,23 @@ conversationId: cid
 
 
 $effect(() => {
-if (!windowsLayerEl) return;
-const hRuns = (ev) => handleShowAgentRuns(ev);
-const hDetail = (ev) => handleShowRunDetail(ev);
-const hConv = (ev) => handleOpenConversation(ev);
-windowsLayerEl.addEventListener('showAgentRuns', hRuns);
-windowsLayerEl.addEventListener('showRunDetail', hDetail);
-windowsLayerEl.addEventListener('openConversation', hConv);
-return () => {
-windowsLayerEl.removeEventListener('showAgentRuns', hRuns);
-windowsLayerEl.removeEventListener('showRunDetail', hDetail);
-windowsLayerEl.removeEventListener('openConversation', hConv);
+    if (!windowsLayerEl) return;
+    const hRuns = (ev) => handleShowAgentRuns(ev);
+    const hDetail = (ev) => handleShowRunDetail(ev);
+    const hConv = (ev) => handleOpenConversation(ev);
+    const hOpenAgentRun = (ev) => handleOpenAgentRun(ev);
+
+    windowsLayerEl.addEventListener('showAgentRuns', hRuns);
+    windowsLayerEl.addEventListener('showRunDetail', hDetail);
+    windowsLayerEl.addEventListener('openConversation', hConv);
+    windowsLayerEl.addEventListener('openAgentRun', hOpenAgentRun);
+
+    return () => {
+    windowsLayerEl.removeEventListener('showAgentRuns', hRuns);
+    windowsLayerEl.removeEventListener('showRunDetail', hDetail);
+    windowsLayerEl.removeEventListener('openConversation', hConv);
+    windowsLayerEl.removeEventListener('openAgentRun', hOpenAgentRun);
+    
 };
 });
 

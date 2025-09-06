@@ -1,5 +1,13 @@
 // Learn more about clients at https://docs.boundaryml.com/docs/snippets/clients/overview
 
+client<llm> CerebrasGptOss120b {
+  provider openai-generic
+  options {
+    model "gpt-oss-120b"
+    base_url "https://api.cerebras.ai/v1"
+    api_key CEREBRAS_API_KEY
+  }
+}
 
 client<llm> CustomO3Mini {
   provider openai

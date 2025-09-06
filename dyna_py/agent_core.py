@@ -24,10 +24,6 @@ class InterruptMixin:
                 ev.set()
         except Exception:
             pass
-
-
-
- 
  
     async def check_interrupt(self):
         if not self.interrupt_queue.empty():

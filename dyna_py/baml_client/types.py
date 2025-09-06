@@ -37,8 +37,17 @@ def get_checks(checks: typing.Dict[CheckName, Check]) -> typing.List[Check]:
 def all_succeeded(checks: typing.Dict[CheckName, Check]) -> bool:
     return all(check.status == "succeeded" for check in get_checks(checks))
 # #########################################################################
-# Generated enums (2)
+# Generated enums (6)
 # #########################################################################
+
+class CompletionPolicy(str, Enum):
+    AllSubtasks = "AllSubtasks"
+    AnySubtask = "AnySubtask"
+    KOfN = "KOfN"
+
+class ExecutionMode(str, Enum):
+    Sequential = "Sequential"
+    Parallel = "Parallel"
 
 class GenericStepOutControl(str, Enum):
     CONTINUE = "CONTINUE"
@@ -50,35 +59,53 @@ class GenericStepOutStatus(str, Enum):
     OK = "OK"
     ERR = "ERR"
 
+class RegisteredWindow(str, Enum):
+    AgentConfigsWindow = "AgentConfigsWindow"
+    AgentsListWindow = "AgentsListWindow"
+    ConversationsWindow = "ConversationsWindow"
+
+class TaskType(str, Enum):
+    NA = "NA"
+    TRANSLATION = "TRANSLATION"
+    LOCALIZATION = "LOCALIZATION"
+
 # #########################################################################
-# Generated classes (8)
+# Generated classes (10)
 # #########################################################################
 
-class MonikerData(BaseModel):
-    topic: typing.Optional[str] = None
+class Completion(BaseModel):
+    policy: typing.Union[CompletionPolicy, str]
+    k: typing.Optional[int] = None
 
-class MonikerGuidance(BaseModel):
-    topic: typing.Optional[str] = None
-    style: typing.Optional[str] = None
+class ConstrainedTask(BaseModel):
+    id: str
+    title: typing.Optional[str] = None
+    description: typing.Optional[str] = None
+    taskType: TaskType
+    executionMode: typing.Union[ExecutionMode, str]
+    subtasks: typing.List["ConstrainedTask"]
+    dependsOn: typing.Optional[typing.List[str]] = None
+    inputPorts: typing.Optional[typing.List["Port"]] = None
+    outputPorts: typing.Optional[typing.List["Port"]] = None
+    completion: typing.Optional["Completion"] = None
+    agentId: typing.Optional[str] = None
+    guard: typing.Optional[str] = None
 
-class MonikerState(BaseModel):
-    topic: typing.Optional[str] = None
-    last_style: typing.Optional[str] = None
-    last_output: typing.Optional[str] = None
+class ConstrainedTaskGraph(BaseModel):
+    tasks: typing.Optional[typing.List["ConstrainedTask"]] = None
+    roots: typing.Optional[typing.List[str]] = None
+    edges: typing.Optional[typing.List["DataEdge"]] = None
 
-class MonikerStepFrameIn(BaseModel):
-    step: str
-    state: "MonikerState"
-    guidance: typing.Optional["MonikerGuidance"] = None
+class DataEdge(BaseModel):
+    fromTaskId: str
+    fromPort: str
+    toTaskId: str
+    toPort: str
 
-class MonikerStepFrameOut(BaseModel):
-    step: str
-    state: "MonikerState"
-    next_step: str
-    text: str
-    data: "MonikerData"
-    done: bool
-    notes: typing.Optional[str] = None
+class Port(BaseModel):
+    name: str
+    type: str
+    required: typing.Optional[bool] = None
 
 class Response(BaseModel):
     can_the_question_be_answered: bool
@@ -96,6 +123,24 @@ class StepFrameOut(BaseModel):
     text: typing.Optional[str] = None
     payload: typing.Optional[str] = None
     context_delta: typing.Optional[str] = None
+
+class Task(BaseModel):
+    id: str
+    title: typing.Optional[str] = None
+    description: typing.Optional[str] = None
+    executionMode: typing.Union[ExecutionMode, str]
+    subtasks: typing.Optional[typing.List["Task"]] = None
+    dependsOn: typing.Optional[typing.List[str]] = None
+    inputPorts: typing.Optional[typing.List["Port"]] = None
+    outputPorts: typing.Optional[typing.List["Port"]] = None
+    completion: typing.Optional["Completion"] = None
+    agentId: typing.Optional[str] = None
+    guard: typing.Optional[str] = None
+
+class TaskGraph(BaseModel):
+    tasks: typing.List["Task"]
+    roots: typing.Optional[typing.List[str]] = None
+    edges: typing.Optional[typing.List["DataEdge"]] = None
 
 # #########################################################################
 # Generated type aliases (0)

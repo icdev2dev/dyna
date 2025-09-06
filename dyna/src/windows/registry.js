@@ -10,7 +10,11 @@ import LiveRunRenderer from './RenderLiveRun.svelte';
 import RenderConversations from './RenderConversations.svelte';
 import RenderConversationThread from './RenderConversationThread.svelte';
 import RenderAgentSessions from './RenderAgentSessions.svelte';
+import RenderAgentConfigs from './RenderAgentConfigs.svelte';
+import RenderTaskGraph from './RenderTaskGraph.svelte';
 
+import RenderJokeAgentRun from './RenderJokeAgentRun.svelte';
+import RenderGoalAgentRun from './RenderGoalAgentRun.svelte';
 
 export const WINDOW_RENDERERS = {
     form: RenderForm,
@@ -24,5 +28,9 @@ export const WINDOW_RENDERERS = {
     liveRun: LiveRunRenderer,
     conversations: RenderConversations,
     conversationThread: RenderConversationThread,
-    agentSessions: RenderAgentSessions
+    agentSessions: RenderAgentSessions,
+    agentConfigs: RenderAgentConfigs, 
+    taskGraph: RenderTaskGraph,
+    jokeAgentRun: RenderJokeAgentRun,
+    goalAgentRun: RenderGoalAgentRun
 };

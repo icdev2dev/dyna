@@ -19,12 +19,14 @@ class JokeAgent(PauseMixin, InterruptMixin, LoopingAgentBase):
 
         loop_interval: float = 30.0,
 
-        guidance_interpreter=None,  # optional: free-form -> structured dict
+        guidance_interpreter="",  # optional: free-form -> structured dict
 
         persist_guidance_raw: bool = True,
         persist_guidance_normalized: bool = True,
     ):
         self.current_subject = initial_subject  # set first
+        self.guidance_interpreter = guidance_interpreter
+
         super().__init__(
             agent_id,
             session_id,
@@ -36,7 +38,8 @@ class JokeAgent(PauseMixin, InterruptMixin, LoopingAgentBase):
             persist_guidance_normalized=persist_guidance_normalized,
         )
         self.current_subject = initial_subject
-
+        self.guidance_interpreter = guidance_interpreter
+        
     def initial_context(self) -> Optional[dict]:
         return {
             "agent_type": "JokeAgent",
@@ -60,21 +63,24 @@ class JokeAgent(PauseMixin, InterruptMixin, LoopingAgentBase):
                 import re
                 m = re.search(r"(?:subject\s*:\s*|about\s+)([A-Za-z0-9 _-]{2,})", str(raw), re.IGNORECASE)
                 if m:
-                    self.current_subject = m.group(1).strip()
-                    return {"subject": self.current_subject}
+
+                    self.guidance_interpreter = m.group(1).strip()
+                    return {"subject": self.current_subject, 
+                            "guidance": self.guidance_interpreter
+                    }
         except Exception:
             pass
         return None
 
     async def do_tick(self, step: int) -> StepOutcome:
 
-        in_arg = StepFrameIn(context=self.current_subject, guidance="")
+        in_arg = StepFrameIn(context=self.current_subject, guidance=self.guidance_interpreter)
         joke =  await b.TellAJokeV2(in_arg=in_arg)
 
         text = getattr(joke, "text", None) or str(joke)
 
         # Provide agent state for storage; include paused for transparency
-        state = {"subject": self.current_subject, "paused": self._paused_flag()}
+        state = {"subject": self.current_subject, "guidance": self.guidance_interpreter, "paused": self._paused_flag()}
 
         return StepOutcome(
             status="ok",

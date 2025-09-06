@@ -73,11 +73,32 @@ class BamlAsyncClient:
     def parse_stream(self):
       return self.__llm_stream_parser
     
-    async def JokeTeller(self, arg: str,
+    async def GenerateConstrainedTaskGraph(self, in_arg: str,
+        baml_options: BamlCallOptions = {},
+    ) -> types.ConstrainedTaskGraph:
+        result = await self.__options.merge_options(baml_options).call_function_async(function_name="GenerateConstrainedTaskGraph", args={
+            "in_arg": in_arg,
+        })
+        return typing.cast(types.ConstrainedTaskGraph, result.cast_to(types, types, stream_types, False, __runtime__))
+    async def GenerateTaskGraph(self, in_arg: str,
+        baml_options: BamlCallOptions = {},
+    ) -> types.TaskGraph:
+        result = await self.__options.merge_options(baml_options).call_function_async(function_name="GenerateTaskGraph", args={
+            "in_arg": in_arg,
+        })
+        return typing.cast(types.TaskGraph, result.cast_to(types, types, stream_types, False, __runtime__))
+    async def GetRegisteredWindow(self, in_arg: str,
+        baml_options: BamlCallOptions = {},
+    ) -> types.RegisteredWindow:
+        result = await self.__options.merge_options(baml_options).call_function_async(function_name="GetRegisteredWindow", args={
+            "in_arg": in_arg,
+        })
+        return typing.cast(types.RegisteredWindow, result.cast_to(types, types, stream_types, False, __runtime__))
+    async def Hello(self, inp_txt: str,
         baml_options: BamlCallOptions = {},
     ) -> str:
-        result = await self.__options.merge_options(baml_options).call_function_async(function_name="JokeTeller", args={
-            "arg": arg,
+        result = await self.__options.merge_options(baml_options).call_function_async(function_name="Hello", args={
+            "inp_txt": inp_txt,
         })
         return typing.cast(str, result.cast_to(types, types, stream_types, False, __runtime__))
     async def RAG(self, question: str,context: str,
@@ -87,27 +108,6 @@ class BamlAsyncClient:
             "question": question,"context": context,
         })
         return typing.cast(types.Response, result.cast_to(types, types, stream_types, False, __runtime__))
-    async def SampleInput(self, text: str,
-        baml_options: BamlCallOptions = {},
-    ) -> types.StepFrameIn:
-        result = await self.__options.merge_options(baml_options).call_function_async(function_name="SampleInput", args={
-            "text": text,
-        })
-        return typing.cast(types.StepFrameIn, result.cast_to(types, types, stream_types, False, __runtime__))
-    async def SampleOutput(self, inp_s: types.StepFrameIn,
-        baml_options: BamlCallOptions = {},
-    ) -> types.StepFrameOut:
-        result = await self.__options.merge_options(baml_options).call_function_async(function_name="SampleOutput", args={
-            "inp_s": inp_s,
-        })
-        return typing.cast(types.StepFrameOut, result.cast_to(types, types, stream_types, False, __runtime__))
-    async def TellAJoke(self, frame: types.MonikerStepFrameIn,task: str,
-        baml_options: BamlCallOptions = {},
-    ) -> types.MonikerStepFrameOut:
-        result = await self.__options.merge_options(baml_options).call_function_async(function_name="TellAJoke", args={
-            "frame": frame,"task": task,
-        })
-        return typing.cast(types.MonikerStepFrameOut, result.cast_to(types, types, stream_types, False, __runtime__))
     async def TellAJokeV2(self, in_arg: types.StepFrameIn,
         baml_options: BamlCallOptions = {},
     ) -> types.StepFrameOut:
@@ -124,11 +124,47 @@ class BamlStreamClient:
     def __init__(self, options: DoNotUseDirectlyCallManager):
         self.__options = options
 
-    def JokeTeller(self, arg: str,
+    def GenerateConstrainedTaskGraph(self, in_arg: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.BamlStream[stream_types.ConstrainedTaskGraph, types.ConstrainedTaskGraph]:
+        ctx, result = self.__options.merge_options(baml_options).create_async_stream(function_name="GenerateConstrainedTaskGraph", args={
+            "in_arg": in_arg,
+        })
+        return baml_py.BamlStream[stream_types.ConstrainedTaskGraph, types.ConstrainedTaskGraph](
+          result,
+          lambda x: typing.cast(stream_types.ConstrainedTaskGraph, x.cast_to(types, types, stream_types, True, __runtime__)),
+          lambda x: typing.cast(types.ConstrainedTaskGraph, x.cast_to(types, types, stream_types, False, __runtime__)),
+          ctx,
+        )
+    def GenerateTaskGraph(self, in_arg: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.BamlStream[stream_types.TaskGraph, types.TaskGraph]:
+        ctx, result = self.__options.merge_options(baml_options).create_async_stream(function_name="GenerateTaskGraph", args={
+            "in_arg": in_arg,
+        })
+        return baml_py.BamlStream[stream_types.TaskGraph, types.TaskGraph](
+          result,
+          lambda x: typing.cast(stream_types.TaskGraph, x.cast_to(types, types, stream_types, True, __runtime__)),
+          lambda x: typing.cast(types.TaskGraph, x.cast_to(types, types, stream_types, False, __runtime__)),
+          ctx,
+        )
+    def GetRegisteredWindow(self, in_arg: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.BamlStream[types.RegisteredWindow, types.RegisteredWindow]:
+        ctx, result = self.__options.merge_options(baml_options).create_async_stream(function_name="GetRegisteredWindow", args={
+            "in_arg": in_arg,
+        })
+        return baml_py.BamlStream[types.RegisteredWindow, types.RegisteredWindow](
+          result,
+          lambda x: typing.cast(types.RegisteredWindow, x.cast_to(types, types, stream_types, True, __runtime__)),
+          lambda x: typing.cast(types.RegisteredWindow, x.cast_to(types, types, stream_types, False, __runtime__)),
+          ctx,
+        )
+    def Hello(self, inp_txt: str,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.BamlStream[str, str]:
-        ctx, result = self.__options.merge_options(baml_options).create_async_stream(function_name="JokeTeller", args={
-            "arg": arg,
+        ctx, result = self.__options.merge_options(baml_options).create_async_stream(function_name="Hello", args={
+            "inp_txt": inp_txt,
         })
         return baml_py.BamlStream[str, str](
           result,
@@ -146,42 +182,6 @@ class BamlStreamClient:
           result,
           lambda x: typing.cast(stream_types.Response, x.cast_to(types, types, stream_types, True, __runtime__)),
           lambda x: typing.cast(types.Response, x.cast_to(types, types, stream_types, False, __runtime__)),
-          ctx,
-        )
-    def SampleInput(self, text: str,
-        baml_options: BamlCallOptions = {},
-    ) -> baml_py.BamlStream[stream_types.StepFrameIn, types.StepFrameIn]:
-        ctx, result = self.__options.merge_options(baml_options).create_async_stream(function_name="SampleInput", args={
-            "text": text,
-        })
-        return baml_py.BamlStream[stream_types.StepFrameIn, types.StepFrameIn](
-          result,
-          lambda x: typing.cast(stream_types.StepFrameIn, x.cast_to(types, types, stream_types, True, __runtime__)),
-          lambda x: typing.cast(types.StepFrameIn, x.cast_to(types, types, stream_types, False, __runtime__)),
-          ctx,
-        )
-    def SampleOutput(self, inp_s: types.StepFrameIn,
-        baml_options: BamlCallOptions = {},
-    ) -> baml_py.BamlStream[stream_types.StepFrameOut, types.StepFrameOut]:
-        ctx, result = self.__options.merge_options(baml_options).create_async_stream(function_name="SampleOutput", args={
-            "inp_s": inp_s,
-        })
-        return baml_py.BamlStream[stream_types.StepFrameOut, types.StepFrameOut](
-          result,
-          lambda x: typing.cast(stream_types.StepFrameOut, x.cast_to(types, types, stream_types, True, __runtime__)),
-          lambda x: typing.cast(types.StepFrameOut, x.cast_to(types, types, stream_types, False, __runtime__)),
-          ctx,
-        )
-    def TellAJoke(self, frame: types.MonikerStepFrameIn,task: str,
-        baml_options: BamlCallOptions = {},
-    ) -> baml_py.BamlStream[stream_types.MonikerStepFrameOut, types.MonikerStepFrameOut]:
-        ctx, result = self.__options.merge_options(baml_options).create_async_stream(function_name="TellAJoke", args={
-            "frame": frame,"task": task,
-        })
-        return baml_py.BamlStream[stream_types.MonikerStepFrameOut, types.MonikerStepFrameOut](
-          result,
-          lambda x: typing.cast(stream_types.MonikerStepFrameOut, x.cast_to(types, types, stream_types, True, __runtime__)),
-          lambda x: typing.cast(types.MonikerStepFrameOut, x.cast_to(types, types, stream_types, False, __runtime__)),
           ctx,
         )
     def TellAJokeV2(self, in_arg: types.StepFrameIn,
@@ -204,11 +204,32 @@ class BamlHttpRequestClient:
     def __init__(self, options: DoNotUseDirectlyCallManager):
         self.__options = options
 
-    async def JokeTeller(self, arg: str,
+    async def GenerateConstrainedTaskGraph(self, in_arg: str,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.baml_py.HTTPRequest:
-        result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="JokeTeller", args={
-            "arg": arg,
+        result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="GenerateConstrainedTaskGraph", args={
+            "in_arg": in_arg,
+        }, mode="request")
+        return result
+    async def GenerateTaskGraph(self, in_arg: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="GenerateTaskGraph", args={
+            "in_arg": in_arg,
+        }, mode="request")
+        return result
+    async def GetRegisteredWindow(self, in_arg: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="GetRegisteredWindow", args={
+            "in_arg": in_arg,
+        }, mode="request")
+        return result
+    async def Hello(self, inp_txt: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="Hello", args={
+            "inp_txt": inp_txt,
         }, mode="request")
         return result
     async def RAG(self, question: str,context: str,
@@ -216,27 +237,6 @@ class BamlHttpRequestClient:
     ) -> baml_py.baml_py.HTTPRequest:
         result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="RAG", args={
             "question": question,"context": context,
-        }, mode="request")
-        return result
-    async def SampleInput(self, text: str,
-        baml_options: BamlCallOptions = {},
-    ) -> baml_py.baml_py.HTTPRequest:
-        result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="SampleInput", args={
-            "text": text,
-        }, mode="request")
-        return result
-    async def SampleOutput(self, inp_s: types.StepFrameIn,
-        baml_options: BamlCallOptions = {},
-    ) -> baml_py.baml_py.HTTPRequest:
-        result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="SampleOutput", args={
-            "inp_s": inp_s,
-        }, mode="request")
-        return result
-    async def TellAJoke(self, frame: types.MonikerStepFrameIn,task: str,
-        baml_options: BamlCallOptions = {},
-    ) -> baml_py.baml_py.HTTPRequest:
-        result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="TellAJoke", args={
-            "frame": frame,"task": task,
         }, mode="request")
         return result
     async def TellAJokeV2(self, in_arg: types.StepFrameIn,
@@ -254,11 +254,32 @@ class BamlHttpStreamRequestClient:
     def __init__(self, options: DoNotUseDirectlyCallManager):
         self.__options = options
 
-    async def JokeTeller(self, arg: str,
+    async def GenerateConstrainedTaskGraph(self, in_arg: str,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.baml_py.HTTPRequest:
-        result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="JokeTeller", args={
-            "arg": arg,
+        result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="GenerateConstrainedTaskGraph", args={
+            "in_arg": in_arg,
+        }, mode="stream")
+        return result
+    async def GenerateTaskGraph(self, in_arg: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="GenerateTaskGraph", args={
+            "in_arg": in_arg,
+        }, mode="stream")
+        return result
+    async def GetRegisteredWindow(self, in_arg: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="GetRegisteredWindow", args={
+            "in_arg": in_arg,
+        }, mode="stream")
+        return result
+    async def Hello(self, inp_txt: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="Hello", args={
+            "inp_txt": inp_txt,
         }, mode="stream")
         return result
     async def RAG(self, question: str,context: str,
@@ -266,27 +287,6 @@ class BamlHttpStreamRequestClient:
     ) -> baml_py.baml_py.HTTPRequest:
         result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="RAG", args={
             "question": question,"context": context,
-        }, mode="stream")
-        return result
-    async def SampleInput(self, text: str,
-        baml_options: BamlCallOptions = {},
-    ) -> baml_py.baml_py.HTTPRequest:
-        result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="SampleInput", args={
-            "text": text,
-        }, mode="stream")
-        return result
-    async def SampleOutput(self, inp_s: types.StepFrameIn,
-        baml_options: BamlCallOptions = {},
-    ) -> baml_py.baml_py.HTTPRequest:
-        result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="SampleOutput", args={
-            "inp_s": inp_s,
-        }, mode="stream")
-        return result
-    async def TellAJoke(self, frame: types.MonikerStepFrameIn,task: str,
-        baml_options: BamlCallOptions = {},
-    ) -> baml_py.baml_py.HTTPRequest:
-        result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="TellAJoke", args={
-            "frame": frame,"task": task,
         }, mode="stream")
         return result
     async def TellAJokeV2(self, in_arg: types.StepFrameIn,

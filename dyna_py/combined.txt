@@ -448,6 +448,64 @@
 
 
 
+        // Conversations list
+        if (config.kind === 'conversations') {
+            const win = {
+            id, kind: 'conversations',
+            title: config.title ?? 'Conversations',
+            position: pos, size, z: ++zCounter, persist
+            };
+            windows = [...windows, win];
+            return id;
+        }
+
+        // Conversation thread
+        if (config.kind === 'conversationThread') {
+            const win = {
+                id, kind: 'conversationThread',
+                title: config.title ?? (config.conversation?.title ?? 'Conversation'),
+                conversation: {
+                id: String(config.conversation?.id || ''),
+                title: String(config.conversation?.title || '')
+            },
+            position: pos, size, z: ++zCounter, persist
+            };
+            windows = [...windows, win];
+            return id;
+        }
+
+        // Agent sessions panel
+        if (config.kind === 'agentSessions') {
+            const win = {
+            id, kind: 'agentSessions',
+            title: config.title ?? 'Agent Sessions',
+            conversationId: String(config.conversationId || ''),
+            position: pos, size, z: ++zCounter, persist
+            };
+            windows = [...windows, win];
+            return id;
+        }
+
+
+
+        if (config.kind === 'agentConfigs') {
+            const win = {
+                id,
+                kind: 'agentConfigs',
+                title: config.title ?? 'Agent Configs',
+                position: pos,
+                size,
+                z: ++zCounter,
+                persist
+            };
+            windows = [...windows, win];
+            return id;
+        }
+
+
+
+
+
 
 
 
@@ -626,18 +684,51 @@ run: { agent_id:aid, session_id:sid }
 
 
 
+function handleOpenConversation(e) {
+const cid = e?.detail?.conversation_id;
+const ctitle = e?.detail?.title ?? 'Conversation';
+if (!cid) return;
+
+// Center and right panels; sizes can be adjusted as you like
+spawn({
+kind: 'conversationThread',
+title: ctitle,
+persist: 'keep',
+position: {x:460, y:40},
+size: { w: 1200, h: 800 },
+conversation: { id: cid, title: ctitle }
+});
+
+spawn({
+kind: 'agentSessions',
+title: 'Agent Sessions',
+persist: 'keep',
+position: {x:1670, y:40},
+
+size: { w: 360, h: 800 },
+conversationId: cid
+});
+}
+
 
 $effect(() => {
 if (!windowsLayerEl) return;
 const hRuns = (ev) => handleShowAgentRuns(ev);
 const hDetail = (ev) => handleShowRunDetail(ev);
+const hConv = (ev) => handleOpenConversation(ev);
 windowsLayerEl.addEventListener('showAgentRuns', hRuns);
 windowsLayerEl.addEventListener('showRunDetail', hDetail);
+windowsLayerEl.addEventListener('openConversation', hConv);
 return () => {
 windowsLayerEl.removeEventListener('showAgentRuns', hRuns);
 windowsLayerEl.removeEventListener('showRunDetail', hDetail);
+windowsLayerEl.removeEventListener('openConversation', hConv);
 };
 });
+
+
+
+
 
 
 
@@ -883,6 +974,206 @@ onRequestClose={requestClose}>
         >×</button>
     {/snippet}
 </WindowFrame>
+
+
+=== ../dyna/src/ConversationsWindow.svelte ===
+<script> 
+    import WindowFrame from './WindowFrame.svelte'; 
+    let { 
+        id, 
+        title = 'Conversations', 
+        position = $bindable({ x: 40, y: 60 }), 
+        size = $bindable({ w: 320, h: 560 }), 
+        z = $bindable(1), 
+        persist = 'keep', 
+        onFocus: onFocusCb, 
+        onRequestClose: onRequestCloseCb 
+    } = $props(); 
+    
+    let loading = $state(false); 
+    let error = $state(null); 
+    let tab = $state('all'); 
+    // all | active | ended 
+    let q = $state(''); 
+    let conversations = $state([]); 
+    let selectedId = $state(null)
+    let rootEl = null; 
+    function requestClose() { onRequestCloseCb?.({ id, isDirty: false, value: null, persist }); } 
+    async function refresh() { 
+        loading = true; 
+        error = null; 
+        try { 
+            const params = new URLSearchParams(); 
+            if (tab !== 'all') params.set('status', tab); 
+            if (q.trim()) params.set('q', q.trim()); 
+            const res = await fetch('http://127.0.0.1:5000/api/conversations' + (params.toString() ? `?${params.toString()}` : '')); 
+            if (!res.ok) throw new Error(`HTTP ${res.status}`); 
+            const data = await res.json(); conversations = Array.isArray(data) ? data : []; 
+        } catch (e) { error = e.message || String(e); } 
+        finally { loading = false; } 
+    } 
+    $effect(() => { refresh(); }); 
+    $effect(() => { tab; q; refresh(); }); 
+    function fmtDate(d) { 
+        if (!d) return ''; 
+        try { 
+            return new Date(d).toLocaleTimeString(); 
+        } catch { return String(d); } 
+    } 
+
+
+
+    function openConversation(conv) { 
+        try { rootEl?.dispatchEvent( new CustomEvent('openConversation', 
+{ detail: { conversation_id: conv.id, title: conv.title ?? 'Conversation' }, bubbles: true, composed: true }) ); 
+            } catch {} 
+    } 
+</script>
+
+<WindowFrame
+    id={id}
+    title={title}
+    bind:position
+    bind:size
+    {z}
+    onFocus={onFocusCb}
+    onRequestClose={requestClose} >
+
+    {#snippet children()}
+
+        <section 
+            bind:this={rootEl} 
+            class="conv-root"> 
+            <div class="tabs"> 
+                <button class:active={tab==='all'} onclick={() => (tab = 'all')}>All</button> 
+                <button class:active={tab==='active'} onclick={() => (tab = 'active')}>Active</button> 
+                <button class:active={tab==='ended'} onclick={() => (tab = 'ended')}>Ended</button> 
+                <input class="search" type="text" placeholder="Search…" bind:value={q} /> 
+            </div>
+
+            {#if loading}
+                <div class="status">Loading…</div>
+            {:else if error}
+                <div class="status err">{error}</div>
+            {:else}
+                <ul class="list"> 
+                    {#each conversations as c (c.id)} 
+                        <li 
+                        class="row" 
+                        class:selected={selectedId === c.id} 
+                        onclick={() => { selectedId = c.id; openConversation(c); }} > 
+                            <div class="title">{c.title ?? '(untitled)'}</div> 
+                            <div class="meta">{fmtDate(c.updated_at ?? c.last_updated)}</div> 
+                            <div class="preview">{c.preview ?? ''}</div> 
+                        </li> 
+                    {/each} 
+                    {#if conversations.length === 0} 
+                        <li class="empty">No conversations.</li> 
+                    {/if} 
+                </ul>
+        {/if}
+        </section> 
+    {/snippet} 
+</WindowFrame> 
+
+<style> 
+    .conv-root { 
+        display: grid; 
+        grid-template-rows: 1fr, top 0; 
+        height: 100%; 
+        /* tweak as desired */ 
+        --row-h: 72px; 
+        --row-gap: 8px; 
+    }
+    
+    .tabs { display: grid; grid-template-columns: auto auto auto 1fr; gap: 8px; align-items: center; } 
+    .tabs button { padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 8px; background: #c3bcbc; } 
+    .tabs button.active { background: #565758; border-color: #93b0ff; font-weight: 700; } 
+    .tabs .search { justify-self: end; min-width: 50px; padding: 8px 2px; border: 1px solid #d1d5db; border-radius: 8px; }
+
+
+    .list { 
+        list-style: none; 
+        padding: 0; 
+        margin: 6px 0 0; 
+        overflow: auto; 
+        /* use fixed vertical gap only */ 
+        display: grid;
+        background: #f7f7f7;  
+        row-gap: var(--row-gap); 
+        column-gap: 0;  
+        grid-auto-rows: var(--row-h);
+        /* Keep tracks packed at the top on resize */
+        place-content: start; 
+/*         align-content: start; or: place-content: start; */
+    } 
+
+
+    .row { 
+        display: grid; 
+        grid-template-columns: 1fr auto; 
+        gap: 4px 10px; 
+        background: #f7f7f7; 
+        border: 1px solid #f7f7f7; 
+        /* border-radius: 10px; */ 
+        padding: 10px; 
+        cursor: pointer; 
+        /* fixed height for each row  
+        height: var(--row-h); 
+        */
+        box-sizing: border-box; 
+        overflow: hidden; 
+        /* pack the internal grid rows to the top (prevents vertical centering) */ 
+        /* align-content: start; */ 
+        position: relative; 
+        /* for selection bar */ 
+    } 
+    .row:hover { background: #bebfc1; } 
+    /* right-side selection bar */ 
+    .row.selected::after {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;           /* moved to left */
+        width: 3px;
+        height: 100%;
+        background: #2563eb;
+        border-top-left-radius: 10px;
+        border-bottom-left-radius: 10px;
+    }
+
+
+
+    /* ensure title is top-left aligned explicitly */ 
+    .title { 
+        color: #475569; 
+        font-weight: 700; 
+        text-align: left; 
+        align-self: start; 
+        justify-self: start; 
+    } 
+    .meta { 
+        color: #475569; 
+        font-size: 12px; 
+    } 
+    .preview { 
+        grid-column: 1 / span 2; 
+        color: #64748b; 
+        font-size: 13px; 
+        white-space: nowrap; 
+        overflow: hidden; 
+        text-overflow: ellipsis; 
+        align-self: start; 
+        /* keep preview near the top as well */ 
+    } 
+    .empty { 
+        color: #64748b; 
+        padding: 10px; 
+        text-align: center; 
+        border: 1px dashed #cbd5e1; 
+        border-radius: 10px; 
+    } 
+</style>
 
 
 === ../dyna/src/OrderEditorWindow.svelte ===
@@ -1194,7 +1485,8 @@ onRequestClose={() => onRequestCloseCb?.({ id, isDirty: false, value: order, per
     {#each messages as m (m.id)}
       <div class="msg {m.role}">
         <div class="bubble">
-          {m.content}
+          
+          {m.text}
           {#if m.meta?.error}
             <div class="err">Error: {m.meta.error}</div>
           {/if}
@@ -1610,8 +1902,25 @@ export default {
 </script> 
 
 
-<!--
+
 <div class="toolbar"> 
+
+        <button type="button" onclick={() =>
+        controller.spawn({ kind: 'conversations', title: 'Conversations', persist: 'keep', size: { w: 410, h: 560 }})}
+        >
+
+        Conversations
+        </button>
+        <button type="button" onclick={() => 
+            controller?.spawn({ kind: 'agentConfigs', title: 'Agent Configs', persist: 'keep',size: { w: 960, h: 600 }})
+        }>
+
+        Agent Configs
+        </button>
+
+
+</div>
+<!--
     <button type="button" 
         onclick={() => controller?.spawn({ 
                             kind: 'plugin', 
@@ -1624,18 +1933,6 @@ export default {
                         }) 
                         } > Open Hello Plugin </button> 
 
-        <button type="button" onclick={() =>
-        controller?.spawn({
-            kind: 'agentsList',
-            title: 'Available Agents',
-            persist: 'keep',
-            size: { w: 740, h: 420 },
-            position: { x: 120, y: 120 }
-        })}
-        >
-
-        Available Agents
-        </button>
 
 
 
@@ -2269,6 +2566,172 @@ export default app
     border-bottom: 1px solid color-mix(in oklab, var(--accent) 20%, #000 0%); } .modal-header .title { font-weight: 800; letter-spacing: 0.2px; } .modal-body { padding: 14px 16px; display: grid; gap: 14px; overflow-y: auto; /* vertical scroll only when needed */ overflow-x: hidden; /* avoid horizontal scrollbar strip */ background: #fff; } .field { display: grid; gap: 6px; } .lbl { font-size: 12px; font-weight: 700; color: #334155; letter-spacing: 0.02em; } .hint { font-size: 12px; color: var(--muted); margin-top: 2px; } .input { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: #fff; /* clean surface */ color: var(--text); outline: none; transition: border-color 120ms, box-shadow 120ms, background-color 120ms; box-shadow: inset 0 1px 0 rgba(0,0,0,0.03); } .input::placeholder { color: #9ca3af; } .input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 24%, #fff 0%); } .input.readonly { background: #f9fafb; color: #475569; } textarea.input { resize: vertical; /* allow height resize; no unexpected scrollbars */ min-height: 82px; } .modal-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 12px 16px; border-top: 1px solid var(--border); background: #fafafa; } .btn { padding: 9px 14px; border-radius: 10px; font-weight: 700; cursor: pointer; border: 1px solid #cbd5e1; background: #fff; color: var(--text); transition: filter 120ms ease, transform 80ms ease, box-shadow 120ms ease, background 120ms ease, border-color 120ms ease; } .btn:hover { background: #f8fafc; } .btn:active { transform: translateY(1px); } .btn:disabled { opacity: 0.7; cursor: not-allowed; } .btn.primary { border-color: color-mix(in oklab, var(--accent) 80%, #1d4ed8); background: var(--accent); color: #fff; box-shadow: 0 2px 8px color-mix(in oklab, var(--accent) 30%, #000 0%); } .btn.primary:hover { filter: brightness(1.05); } .btn.secondary { background: #fff; } .alert.err { color: #7f1d1d; background: #fef2f2; border: 1px solid #fee2e2; padding: 10px 12px; border-radius: 10px; } </style>
 
 
+=== ../dyna/src/AgentSessionsPanelWindow.svelte ===
+<script> 
+    import WindowFrame from './WindowFrame.svelte'; 
+    let { 
+        id, 
+        title = 'Agent Sessions', 
+        conversationId = $bindable(''), 
+        position = $bindable({ x: 960, y: 60 }), 
+        size = $bindable({ w: 360, h: 560 }), 
+        z = $bindable(1), 
+        persist = 'keep', 
+        onFocus: onFocusCb, 
+        onRequestClose: onRequestCloseCb 
+    } = $props(); 
+    let loading = $state(false); 
+    let error = $state(null); 
+    let sessions = $state([]); 
+    function requestClose() { onRequestCloseCb?.({ id, isDirty: false, value: null, persist }); } 
+    async function refresh() { 
+        if (!conversationId) return; 
+        loading = true; error = null; 
+        try { 
+            const res = await fetch(`http://127.0.0.1:5000/api/conversation-sessions?conversation_id=${encodeURIComponent(conversationId)}`); 
+            if (!res.ok) throw new Error(`HTTP ${res.status}`); 
+            const data = await res.json(); 
+            sessions = Array.isArray(data) ? data : []; 
+        } catch (e) { error = e.message || String(e); } finally { loading = false; } 
+    } 
+    $effect(() => { conversationId; refresh(); }); 
+    function badgeClass(s) { 
+        const v = (s || '').toLowerCase(); 
+        if (v === 'running') return 'badge running'; 
+        if (v === 'paused') return 'badge paused'; 
+        if (v === 'stopped') return 'badge stopped'; 
+        return 'badge'; 
+    } 
+    async function post(path, body) { 
+        const res = await fetch(`http://127.0.0.1:5000${path}`, 
+                                { 
+                                    method: 'POST', 
+                                    headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body ?? {}) 
+                                }); 
+        if (!res.ok) throw new Error(`HTTP ${res.status}`); 
+    } 
+    
+    async function pause(s) { 
+        try { 
+            await post('/api/pause-agent', { session_id: s.session_id }); 
+            await refresh(); 
+        } catch (e) { alert(e.message || String(e)); } } 
+    async function resume(s) { 
+        try { 
+            await post('/api/resume-agent', 
+            { session_id: s.session_id }); await refresh(); } catch (e) { alert(e.message || String(e)); 
+            
+        } 
+    } 
+    
+    async function stop(s) { 
+        try { 
+            await post('/api/stop-agent', { session_id: s.session_id }); 
+            await refresh(); 
+        } catch (e) { alert(e.message || String(e)); } 
+    } 
+    async function interrupt(s) { 
+        const g = window.prompt('Guidance to interrupt with (optional):', ''); 
+        if (g == null) return; 
+        try { await post('/api/interrupt-agent', { session_id: s.session_id, guidance: g }); await refresh(); } catch (e) { alert(e.message || String(e)); } } 
+    async function sendQuick(s) { 
+        const msg = window.prompt('Send message to this agent:', ''); 
+        if (!msg && msg !== '') return; 
+        try { 
+            await post('/api/send-to-agent', 
+            { session_id: s.session_id, message: msg }); 
+        } catch (e) { alert(e.message || String(e)); } } 
+</script>
+
+<WindowFrame
+    id={id}
+    title={title}
+    bind:position
+    bind:size
+    {z}
+    onFocus={onFocusCb}
+    onRequestClose={requestClose} >
+
+    {#snippet headerActions()}
+        <div style="display:flex; gap:6px;">
+        <button class="win-close" type="button" onpointerdown={(e)=>e.stopPropagation()} onclick={refresh}>Refresh</button>
+        <button class="win-close" type="button" onpointerdown={(e)=>e.stopPropagation()} onclick={requestClose} aria-label="Close">×</button>
+        </div>
+    {/snippet}
+
+    {#snippet children()}
+        <section class="panel-root">
+            {#if loading}
+                <div>Loading…</div>
+            {:else if error}
+                <div class="err">Error: {error}</div>
+            {:else}
+                <div class="cards">
+                {#each sessions as s (s.session_id)}
+                    <div class="card">
+                    <div class="card-head">
+                    <div class="agent">{s.agent_name ?? s.agent_id ?? 'Agent'}</div>
+                    <div class={badgeClass(s.status)}>{s.status ?? ''}</div>
+                    </div>
+                    <div class="sub">ID {s.session_id}</div>
+
+                            <div class="lbl">Last output</div>
+                            <div class="out">{s.last_output ?? '(idle)'}</div>
+
+                            {#if Array.isArray(s.tags) && s.tags.length}
+                                <div class="tags">
+                                {#each s.tags as t}<span class="tag">{t}</span>{/each}
+                                </div>
+                            {/if}
+
+                            <div class="row-btns">
+                                {#if (s.status || '').toLowerCase() === 'running'}
+                                    <button class="btn" onclick={() => pause(s)}>Pause</button>
+                                    <button class="btn" onclick={() => interrupt(s)}>Interrupt</button>
+                                    <button class="btn" onclick={() => sendQuick(s)}>Send</button>
+                                    <button class="btn danger" onclick={() => stop(s)}>Stop</button>
+                                {:else if (s.status || '').toLowerCase() === 'paused'}
+                                    <button class="btn" onclick={() => resume(s)}>Resume</button>
+                                    <button class="btn" onclick={() => sendQuick(s)}>Send</button>
+                                {:else}
+                                    <button class="btn" onclick={() => sendQuick(s)}>Send</button>
+                                {/if}
+                            </div>
+                        </div>
+                {/each}
+                {#if !sessions.length}
+                    <div class="empty">No sessions for this conversation.</div>
+                {/if}
+            </div>
+        {/if}
+        </section>
+    {/snippet}
+</WindowFrame>
+
+<style> 
+    .panel-root { height: 100%; overflow: auto; } 
+    .cards { display: grid; gap: 10px; } 
+    .card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 10px; background: #fff; } 
+    .card-head { display: flex; justify-content: space-between; align-items: center; } 
+    .agent { font-weight: 800; } 
+    .badge { padding: 3px 8px; border-radius: 999px; background: #eef2ff; color: #1e3a8a; font-weight: 700; font-size: 12px; border: 1px solid #c7d2fe; } 
+    .badge.running { background: #ecfeff; color: #0e7490; border-color: #99f6e4; } 
+    .badge.paused { background: #fff7ed; color: #b45309; border-color: #fed7aa; } 
+    .badge.stopped { background: #fee2e2; color: #991b1b; border-color: #fecaca; } 
+    .sub { color: #64748b; font-size: 12px; margin-top: 2px; } 
+    .lbl { margin-top: 8px; font-size: 12px; color: #475569; } 
+    .out { background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px; } 
+    .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; } 
+    .tag { background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 999px; padding: 3px 8px; font-size: 12px; } 
+    .row-btns { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; } 
+    .btn { padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; cursor: pointer; } 
+    .btn.danger { color: #991b1b; border-color: #fecaca; background: #fee2e2; } 
+    .empty { color: #64748b; text-align: center; padding: 10px; border: 1px dashed #cbd5e1; border-radius: 10px; } 
+    .err { color: #b91c1c; } 
+</style>
+
+
+
 === ../dyna/src/MetaDataWindow.svelte ===
 <script> 
     import WindowFrame from './WindowFrame.svelte'; 
@@ -2323,6 +2786,125 @@ export default app
 </WindowFrame>
 
 <style> .header-actions { display: flex; gap: 6px; } </style>
+
+
+=== ../dyna/src/ConversationThreadWindow.svelte ===
+<script> 
+    import WindowFrame from './WindowFrame.svelte'; 
+    import ChatPanel from './ChatPanel.svelte'; 
+    let { 
+        id, 
+        title = 'Conversation', 
+        conversation = $bindable({ id: '', title: '' }), 
+        position = $bindable({ x: 380, y: 60 }), 
+        size = $bindable({ w: 560, h: 560 }), 
+        z = $bindable(1), 
+        persist = 'keep', 
+        onFocus: onFocusCb, 
+        onRequestClose: onRequestCloseCb 
+    } = $props(); 
+    let loading = $state(false); 
+    let error = $state(null); 
+    let messages = $state([]); 
+    let participants = $state([]); 
+    function requestClose() { onRequestCloseCb?.({ id, isDirty: false, value: { messages }, persist }); } 
+    async function refresh() { 
+        if (!conversation?.id) return; 
+        loading = true; 
+        error = null; 
+        try { 
+            const res = await fetch(`http://127.0.0.1:5000/api/conversation-messages?conversation_id=${encodeURIComponent(conversation.id)}`); 
+            if (!res.ok) throw new Error(`HTTP ${res.status}`); 
+            const data = await res.json(); 
+            messages = Array.isArray(data?.messages) ? data.messages : Array.isArray(data) ? data : []; 
+            participants = Array.isArray(data?.participants) ? data.participants : (data?.participants ?? []); 
+        } catch (e) { error = e.message || String(e); } finally { loading = false; } 
+    } 
+    $effect(() => { conversation?.id; refresh(); }); 
+    function conversationChatAdapter(convId) { 
+        // console.log(messages)
+
+        return { 
+            async *stream({ messages, config, signal }) { 
+                const res = await fetch('http://127.0.0.1:5000/api/conversation-chat', 
+                                        { 
+                                            method: 'POST', 
+                                            headers: { 'Content-Type': 'application/json' }, 
+                                            body: JSON.stringify({ conversation_id: convId, messages, config }), 
+                                            signal 
+                                        }); 
+                const reader = res.body.getReader();
+            //    console.log(reader) 
+                const td = new TextDecoder(); 
+                while (true) { 
+                    const { value, done } = await reader.read(); 
+                    if (done) break; 
+                    yield td.decode(value, { stream: true }); 
+                } 
+            } 
+        };
+    } 
+</script>
+
+<WindowFrame
+    id={id}
+    title={conversation.title || title}
+    bind:position
+    bind:size
+    {z}
+    onFocus={onFocusCb}
+    onRequestClose={requestClose}
+    >
+    {#snippet headerActions()}
+    <div style="display:flex; gap:6px;">
+    <button class="win-close" type="button" onpointerdown={(e)=>e.stopPropagation()} onclick={refresh}>Add Participants</button>
+
+    <button class="win-close" type="button" onpointerdown={(e)=>e.stopPropagation()} onclick={refresh}>Refresh</button>
+    <button class="win-close" type="button" onpointerdown={(e)=>e.stopPropagation()} onclick={requestClose} aria-label="Close">×</button>
+    </div>
+    {/snippet}
+
+    {#snippet children()}
+        <section class="thread-root">
+            <div class="head-row">
+            <div class="participants">
+            {#each participants as p}
+                <span class="pill">{p.name ?? p.id ?? 'participant'}</span>
+            {/each}
+            {#if !participants?.length}
+                <span class="muted">No participants info</span>
+            {/if}
+            </div>
+            </div>
+
+            {#if loading}
+                <div>Loading…</div>
+            {:else if error}
+                <div class="err">Error: {error}</div>
+            {:else}
+                <div class="panel">
+                    <ChatPanel bind:messages={messages} adapter={conversationChatAdapter(conversation.id)} />
+                </div>
+            {/if}
+        </section>
+    {/snippet}
+</WindowFrame>
+
+<style> 
+    .thread-root { display: grid; grid-template-rows: auto 1fr; height: 100%; } 
+    .head-row { padding-bottom: 6px; border-bottom: 1px solid #eef0f3; } 
+    .participants { display: flex; gap: 6px; flex-wrap: wrap; } 
+    .pill { 
+        background: #e7efff; 
+        color: #1e3a8a; 
+        border: 1px solid #93b0ff; 
+        padding: 4px 8px; 
+        border-radius: 999px; 
+        font-weight: 600; 
+        font-size: 20px; 
+    } 
+    .muted { color: #64748b; font-size: 12px; } .panel { height: 100%; } .err { color: #b91c1c; } 
+</style>
 
 
 === ../dyna/src/FormWindow.svelte ===
@@ -2449,6 +3031,289 @@ export default {
     />
   {/each}
 </fieldset>
+
+
+=== ../dyna/src/AgentConfigsWindow.svelte ===
+<script> 
+    import WindowFrame from './WindowFrame.svelte'; 
+    let { 
+        id, 
+        title = 'Agent Configs', 
+        position = $bindable({ x: 80, y: 80 }), 
+        size = $bindable({ w: 960, h: 600 }), 
+        z = $bindable(1), 
+        persist = 'keep', 
+        onFocus: onFocusCb, 
+        onRequestClose: onRequestCloseCb 
+    } = $props(); 
+    
+    const AGENT_TYPES = ['JokeAgent', 'PersonaAgent']; 
+    let loading = $state(false); 
+    let error = $state(null); 
+    // List + search 
+    let q = $state(''); 
+    let items = $state([]); 
+    // [{ agent_id, agent_type, agent_description, agents_metadata? }] 
+    let selectedId = $state(null); 
+    // Detail form 
+    let form = $state({ agent_id: '', agent_type: '', agent_description: '', agents_metadata: '{\n}' }); 
+    let savedSnapshot = $state(''); 
+    let saveBusy = $state(false); 
+    let saveErr = $state(null); 
+    let deleteBusy = $state(false); 
+    let deleteErr = $state(null);
+    
+    
+    let filtered = $derived(
+        !q.trim()
+        ? items
+        : items.filter((it) => {
+        const needle = q.trim().toLowerCase();
+        return (
+        (it.agent_id || '').toLowerCase().includes(needle) ||
+        (it.agent_type || '').toLowerCase().includes(needle) ||
+        (it.agent_description || '').toLowerCase().includes(needle)
+        );
+        })
+    );
+
+
+    const isDirty = $derived(() => JSON.stringify(form ?? {}) !== savedSnapshot); 
+    function requestClose() { 
+        onRequestCloseCb?.({ id, isDirty, value: null, persist }); 
+    } 
+    function setFormFromItem(it) { 
+        form = { agent_id: it?.agent_id ?? '', agent_type: it?.agent_type ?? '', agent_description: it?.agent_description ?? '', agents_metadata: it?.agents_metadata ?? '{\n}' }; savedSnapshot = JSON.stringify(form ?? {}); 
+        saveErr = null; deleteErr = null; 
+    } 
+    async function refresh() { 
+        loading = true; 
+        error = null; 
+        try { 
+            const res = await fetch('http://127.0.0.1:5000/api/list-agent-configs'); 
+            if (!res.ok) throw new Error(`HTTP ${res.status}`); 
+            const data = await res.json(); 
+            items = Array.isArray(data) ? data : []; 
+            // Reset selection if missing 
+            if (selectedId && !items.some(x => x.agent_id === selectedId)) { selectedId = null; } 
+            if (selectedId == null && items.length) { selectedId = items[0].agent_id; } 
+            const sel = items.find(x => x.agent_id === selectedId); 
+            if (sel) setFormFromItem(sel); 
+            else { 
+                // keep current form if starting fresh 
+                if (!isDirty) { newConfig(); } 
+            } 
+        } catch (e) { error = e.message || String(e); } finally { loading = false; } 
+    } 
+    $effect(() => { refresh(); }); 
+    function confirmNavAway() { 
+        if (!isDirty) return true; 
+        return window.confirm('You have unsaved changes. Continue and discard them?'); 
+    } 
+    function selectRow(it) { if (!confirmNavAway()) return; selectedId = it?.agent_id ?? null; setFormFromItem(it); } 
+    function newConfig() { 
+        if (!confirmNavAway()) return; 
+        selectedId = null; 
+        form = { agent_id: '', agent_type: '', agent_description: '', agents_metadata: '{\n}' }; 
+        savedSnapshot = JSON.stringify(form ?? {}); saveErr = null; deleteErr = null; 
+    } 
+    function duplicateSelected() { 
+        const base = items.find(x => x.agent_id === selectedId); 
+        if (!base) return; 
+        if (!confirmNavAway()) return; 
+        selectedId = null; 
+        form = { agent_id: `${base.agent_id || ''}-copy`, agent_type: base.agent_type || '', agent_description: base.agent_description || '', agents_metadata: base.agents_metadata ?? '{\n}' }; 
+        savedSnapshot = JSON.stringify(form ?? {}); 
+        // treat as clean draft 
+        saveErr = null; 
+    } 
+    function formatJSON() { 
+        try { 
+            const txt = (form.agents_metadata ?? '').trim(); 
+            const v = txt ? JSON.parse(txt) : {}; 
+            // form = { ...form, agents_metadata: JSON.stringify(v, null, 2) }; 
+            // no error if just formatting 
+        } catch (e) { saveErr = 'Invalid JSON: ' + (e?.message || String(e)); } 
+    } 
+        
+    function validateForm() { 
+        const id = (form.agent_id || '').trim(); 
+        const type = (form.agent_type || '').trim(); 
+        if (!id) return 'Agent ID is required.'; 
+        if (!type || !AGENT_TYPES.includes(type)) return 'Agent type is required.'; 
+      //  const meta = (form.agents_metadata ?? '').trim(); 
+      //  if (meta) { try { JSON.parse(meta); } catch (e) { return 'agents_metadata must be valid JSON.'; } } 
+        return null; 
+    } 
+    async function save() { 
+        saveErr = null; 
+        const err = validateForm(); 
+        alert(err)
+
+        if (err) { saveErr = err; return; } 
+        saveBusy = true; 
+//        alert("hmmm...")
+        try { 
+            const body = { 
+                agent_id: form.agent_id?.trim(), 
+                agent_type: form.agent_type?.trim(), 
+                agent_description: form.agent_description ?? '', 
+                agents_metadata: form.agents_metadata ?? '' 
+            }; 
+            const res = await fetch('http://127.0.0.1:5000/api/upsert-agent-config', { 
+                method: 'POST', 
+                headers: { 'Content-Type': 'application/json' }, 
+                body: JSON.stringify(body) }
+            );
+
+            if (!res.ok) throw new Error(`HTTP ${res.status}`); 
+
+            savedSnapshot = JSON.stringify(form ?? {}); 
+            alert("heer")
+            // Re-sync list and keep (possibly renamed) id selected 
+            selectedId = form.agent_id?.trim() || null; await refresh(); 
+        } catch (e) { saveErr = e.message || String(e); } finally { saveBusy = false; } 
+    } 
+    async function remove() { 
+        deleteErr = null; 
+        if (!form.agent_id) return; 
+        if (!window.confirm(`Delete agent config "${form.agent_id}"?`)) return; 
+        deleteBusy = true; 
+        try { 
+            const res = await fetch(`http://127.0.0.1:5000/api/delete-agent-config?agent_id=${encodeURIComponent(form.agent_id)}`, { method: 'DELETE' }); if (!res.ok) throw new Error(`HTTP ${res.status}`); 
+            // Remove from local list 
+            items = items.filter(x => x.agent_id !== form.agent_id); 
+            // Select next or new 
+            if (items.length) { selectedId = items[0].agent_id; setFormFromItem(items[0]); } else { newConfig(); } 
+        } catch (e) { deleteErr = e.message || String(e); } finally { deleteBusy = false; } 
+    } 
+</script>
+<WindowFrame
+    id={id}
+    title={title}
+    bind:position
+    bind:size
+    {z}
+    onFocus={onFocusCb}
+    onRequestClose={requestClose}
+>
+
+{#snippet headerActions()}
+<div class="hdr-actions">
+<button class="win-close" type="button" onpointerdown={(e)=>e.stopPropagation()} onclick={save} disabled={saveBusy}>Save</button>
+<button class="win-close" type="button" onpointerdown={(e)=>e.stopPropagation()} onclick={requestClose} aria-label="Close">×</button>
+</div>
+{/snippet}
+
+{#snippet children()}
+    <section class="cfg-root">
+        {#if loading}
+            <div>Loading…</div>
+        
+        {:else if error}
+            <div class="err">Error: {error}</div>
+        {:else}
+            <div class="split">
+                <aside class="list-pane">
+                    <div class="list-head">
+                        <input type="text" placeholder="Search…" bind:value={q} />
+                        <button class="primary" type="button" onclick={newConfig}>+ New</button>
+                    </div>
+
+                    <ul class="list">
+                        {#each filtered as it (it.agent_id)}
+                            <li class:selected={it.agent_id === selectedId} onclick={() => selectRow(it)}>
+                            <div class="id">{it.agent_id}</div>
+                            <div class="meta">{it.agent_type}</div>
+                            <div class="desc">{it.agent_description}</div>
+                            </li>
+                        {/each}
+                        {#if !filtered.length}
+                            <li class="empty">No configs.</li>
+                        {/if}
+                    </ul>
+                </aside>
+                <main class="detail-pane">
+                    {#if saveErr}<div class="alert err">{saveErr}</div>{/if}
+                    {#if deleteErr}<div class="alert err">{deleteErr}</div>{/if}
+
+                    <div class="grid">
+                        <div class="field">
+                            <label>Agent ID</label>
+                            <input type="text" bind:value={form.agent_id} placeholder="unique id" />
+                        </div>
+
+                        <div class="field">
+                            <label>Agent Type</label>
+                            <select bind:value={form.agent_type}>
+                            <option value="" disabled selected={!form.agent_type}>Select agent type…</option>
+                            {#each AGENT_TYPES as t}
+                                <option value={t}>{t}</option>
+                            {/each}
+                            </select>
+                        </div>
+
+                        <div class="field span-2">
+                            <label>Description</label>
+                            <input type="text" bind:value={form.agent_description} placeholder="optional description" />
+                        </div>
+
+                        <div class="field span-2">
+                            <div class="row">
+                                <label>agents_metadata (JSON)</label>
+                                <button class="btn" type="button" onclick={formatJSON} title="Format JSON">Format JSON</button>
+                            </div>
+                            <textarea rows="10" bind:value={form.agents_metadata} class="mono"></textarea>
+                        </div>
+                    </div>
+
+                    <div class="actions">
+                    <button type="button" class="btn" onclick={duplicateSelected} disabled={!selectedId}>Duplicate</button>
+                    <button type="button" class="btn danger" onclick={remove} disabled={!form.agent_id || deleteBusy}>Delete</button>
+                    <div class="spacer"></div>
+                    <button type="button" class="btn primary" onclick={save} disabled={saveBusy}>Save</button>
+                    </div>
+                </main>
+
+            </div>
+        {/if}
+    </section>
+{/snippet}
+
+</WindowFrame>
+
+<style> 
+    .hdr-actions { display:flex; gap:6px; } 
+    .cfg-root { height: 100%; display: grid; } 
+    .split { display: grid; grid-template-columns: 320px 1fr; height: 100%; gap: 12px; } 
+    .list-pane { border-right: 1px solid #e5e7eb; padding-right: 8px; display: grid; grid-template-rows: auto 1fr; } 
+    .list-head { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding-bottom: 8px; } 
+    .list-head input { padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 10px; } 
+    .list { list-style: none; margin: 0; padding: 0; overflow: auto; display: grid; gap: 6px; } 
+    .list li { border: 1px solid #e5e7eb; border-radius: 10px; padding: 8px 10px; background: #fff; cursor: pointer; } 
+    .list li.selected { border-color: #93b0ff; box-shadow: 0 0 0 2px rgba(37,99,235,0.15); } 
+    .list .id { font-weight: 800; color: #0f172a; } 
+    .list .meta { font-size: 12px; color: #475569; } 
+    .list .desc { font-size: 12px; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } 
+    .list .empty { text-align: center; color: #64748b; border: 1px dashed #cbd5e1; } 
+    .detail-pane { display: grid; grid-template-rows: auto 1fr auto; gap: 10px; } 
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; } 
+    .field { display: grid; gap: 6px; } 
+    .field.span-2 { grid-column: span 2; } 
+    label { font-size: 12px; color: #6b7280; } 
+    input[type="text"], select, textarea { padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 10px; outline: none; transition: border-color 120ms, box-shadow 120ms; } 
+    textarea.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; } 
+    input:focus, select:focus, textarea:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.16); } 
+    .row { display:flex; align-items:center; justify-content: space-between; gap: 8px; } 
+    .actions { display: flex; gap: 8px; align-items: center; } 
+    .spacer { flex: 1; } 
+    .btn { padding: 8px 12px; border-radius: 10px; border: 1px solid #cbd5e1; background: #2065ed; cursor: pointer; } 
+    .btn.primary { border-color: #1d4ed8; background: #2563eb; color: #fff; font-weight: 700; } 
+    .btn.danger { color: #991b1b; border-color: #fecaca; background: #fee2e2; } 
+    .primary { border: 1px solid #1d4ed8; background: #2563eb; color: #fff; font-weight: 700; border-radius: 10px; padding: 8px 12px; } 
+    .alert.err { color: #f8f1f1; background: #db2525; border: 1px solid #fee2e2; padding: 10px 12px; border-radius: 10px; } 
+    .err { color: #f0e9e9; background: #f38888;} 
+</style>
 
 
 === ../dyna/src/MetaDataInterpreter.svelte ===
@@ -3749,6 +4614,54 @@ let {
 />
 
 
+=== ../dyna/src/windows/RenderAgentConfigs.svelte ===
+<script> 
+    import AgentConfigsWindow from '../AgentConfigsWindow.svelte'; 
+    let { 
+            w, 
+            onFocus, 
+            onRequestClose, 
+            position = $bindable(w.position), 
+            size = $bindable(w.size), 
+            z = $bindable(w.z) 
+        } = $props(); 
+</script>
+<AgentConfigsWindow
+    id={w.id}
+    title={w.title}
+    bind:position
+    bind:size
+    bind:z
+    onFocus={onFocus}
+    onRequestClose={onRequestClose}
+/>
+
+
+
+
+=== ../dyna/src/windows/RenderConversationThread.svelte ===
+<script> 
+    import ConversationThreadWindow from '../ConversationThreadWindow.svelte'; 
+    let { 
+        w, 
+        onFocus, 
+        onRequestClose, 
+        position = $bindable(w.position), 
+        size = $bindable(w.size), 
+        z = $bindable(w.z) 
+    } = $props(); 
+</script>
+<ConversationThreadWindow
+id={w.id}
+title={w.title}
+bind:position
+bind:size
+bind:z
+conversation={w.conversation}
+onFocus={onFocus}
+onRequestClose={onRequestClose}
+/>
+
 === ../dyna/src/windows/registry.js ===
 import RenderForm from './RenderForm.svelte';
 import RenderChat from './RenderChat.svelte';
@@ -3759,6 +4672,10 @@ import RenderOrderEditor from './RenderOrderEditor.svelte';
 import RenderAgentRuns from './RenderAgentRuns.svelte';
 import RenderRunDetail from './RenderRunDetail.svelte';
 import LiveRunRenderer from './RenderLiveRun.svelte';
+import RenderConversations from './RenderConversations.svelte';
+import RenderConversationThread from './RenderConversationThread.svelte';
+import RenderAgentSessions from './RenderAgentSessions.svelte';
+import RenderAgentConfigs from './RenderAgentConfigs.svelte';
 
 
 export const WINDOW_RENDERERS = {
@@ -3770,7 +4687,11 @@ export const WINDOW_RENDERERS = {
     orderEditor: RenderOrderEditor,
     agentRuns: RenderAgentRuns,
     runDetail: RenderRunDetail,
-    liveRun: LiveRunRenderer
+    liveRun: LiveRunRenderer,
+    conversations: RenderConversations,
+    conversationThread: RenderConversationThread,
+    agentSessions: RenderAgentSessions,
+    agentConfigs: RenderAgentConfigs
 };
 
 
@@ -3796,6 +4717,54 @@ export const WINDOW_RENDERERS = {
     onRequestClose={onRequestClose}
 />
 
+
+
+=== ../dyna/src/windows/RenderAgentSessions.svelte ===
+<script> 
+    import AgentSessionsPanelWindow from '../AgentSessionsPanelWindow.svelte'; 
+    let { 
+        w, 
+        onFocus, 
+        onRequestClose, 
+        position = $bindable(w.position), 
+        size = $bindable(w.size), 
+        z = $bindable(w.z) 
+    } = $props(); 
+</script>
+
+<AgentSessionsPanelWindow
+id={w.id}
+title={w.title}
+bind:position
+bind:size
+bind:z
+conversationId={w.conversationId}
+onFocus={onFocus}
+onRequestClose={onRequestClose}
+/>
+
+
+=== ../dyna/src/windows/RenderConversations.svelte ===
+<script> 
+    import ConversationsWindow from '../ConversationsWindow.svelte'; 
+    let { 
+        w, 
+        onFocus, 
+        onRequestClose, 
+        position = $bindable(w.position), 
+        size = $bindable(w.size), 
+        z = $bindable(w.z) 
+    } = $props(); 
+</script>
+<ConversationsWindow
+id={w.id}
+title={w.title}
+bind:position
+bind:size
+bind:z
+onFocus={onFocus}
+onRequestClose={onRequestClose}
+/>
 
 
 === ../dyna/src/windows/RenderRunDetail.svelte ===

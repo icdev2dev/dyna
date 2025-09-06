@@ -88,7 +88,7 @@ class JokeAgent(PauseMixin, InterruptMixin, LoopingAgentBase):
 
 import asyncio
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 from queue_imp import mark_action_processed_async, QUEUE_NAME
 
@@ -98,7 +98,6 @@ from joke_agent import JokeAgent
 from store.agent_state import upsert_agent_state, get_agent_state
 from environment import environment_reload as _environment_reload
 from persona_agent import PersonaAgent
-from store.conversations import add_participant
 from store.conversations import add_participant_if_absent
 
 JOKE_AGENTS = {}  # agent_id -> JokeAgent
@@ -130,21 +129,20 @@ async def upsert_state_async(agent_id, status=None, iteration=None, result=None,
 
 
 def _resolve_agent(agent_id=None, session_id=None):
-    # Prefer session_id if supplied
-
-    
+# Prefer session_id if supplied
     if session_id and session_id in SESSIONS:
         return session_id, SESSIONS.get(session_id)
-    # Fallback: latest session for agent_id
+    # Fallback: latest session for agent_id (only if not stale)
     if agent_id and agent_id in AGENT_LATEST:
         sid = AGENT_LATEST[agent_id]
-        return sid, SESSIONS.get(sid)
+        agent = SESSIONS.get(sid)
+        if agent:
+            return sid, agent
+    # stale mapping; fall through to legacy
     # Legacy: single-agent map
     if agent_id and agent_id in JOKE_AGENTS:
         return None, JOKE_AGENTS.get(agent_id)
     return None, None
-
-
 
 
 async def environment_reload_handler(db, async_tbl, action):
@@ -157,11 +155,6 @@ async def environment_reload_handler(db, async_tbl, action):
             await mark_action_processed_async(async_tbl, action_id)
 
 # Agent action handlers
-
-
-
-
-
 
 async def agent_create(db, async_tbl, action):
     import functools, uuid
@@ -187,49 +180,38 @@ async def agent_create(db, async_tbl, action):
             print(f"Session {session_id} already exists; skipping.")
             return
 
-
-
         if agent_type == "PersonaAgent":
             agent = PersonaAgent(
                 agent_id,
                 session_id,
-                conversation_id=conversation_id,
-                persona_config=persona_config,
-                loop_interval=payload.get("loop_interval", 1.5),
                 state_updater=functools.partial(upsert_state_async, session_id=session_id),
                 steps_appender=functools.partial(
                     __import__("store.steps_async", fromlist=["append_step_async"]).append_step_async,
                     agent_id,
                     session_id=session_id
                 ),
+                conversation_id=conversation_id,
+                persona_config=persona_config,
+                loop_interval=payload.get("loop_interval", 1.5),
             )
         else:
             agent = JokeAgent(
                 agent_id,
                 session_id,
-                initial_subject=initial_subject,
                 state_updater=functools.partial(upsert_state_async, session_id=session_id),
                 steps_appender=functools.partial(
-                # append_step_async signature (agent_id, iteration, **fields)
-                __import__("store.steps_async", fromlist=["append_step_async"]).append_step_async,
-                agent_id,
-                session_id=session_id
+                    __import__("store.steps_async", fromlist=["append_step_async"]).append_step_async,
+                    agent_id,
+                    session_id=session_id
                 ),
+                initial_subject=initial_subject,
             )
-
-
-
-
-
-
-
 
 
         # Register
         SESSIONS[session_id] = agent
         AGENT_LATEST[agent_id] = session_id
         JOKE_AGENTS[agent_id] = agent  # legacy compatibility
-
 
         try:
             if agent_type == "PersonaAgent" and conversation_id:
@@ -238,11 +220,7 @@ async def agent_create(db, async_tbl, action):
         except Exception as e:
             print(f"add_participant failed: {e}")
 
-
         task = asyncio.create_task(agent.run())
-
-
-
 
         def _log_task_result(t):
             import traceback, asyncio
@@ -258,22 +236,14 @@ async def agent_create(db, async_tbl, action):
         task.add_done_callback(_log_task_result)
         agent._task = task
 
-
-
         atype = "PersonaAgent" if agent_type == "PersonaAgent" else "JokeAgent"
         print(f"Agent {agent_id}/{session_id}: launching {atype} loop"
         + (f" (conversation={conversation_id})" if agent_type == "PersonaAgent" else f" (subject={initial_subject})"))
-
-
 
     finally:
         if action_id:
             await mark_action_processed_async(async_tbl, action_id)
             print(f"Marked action_id {action_id} as processed.")
-
-
-
-
 
 
 async def agent_destroy(db, async_tbl, action):
@@ -285,7 +255,7 @@ async def agent_destroy(db, async_tbl, action):
         sid, agent = _resolve_agent(agent_id=agent_id, session_id=session_id)
         if not agent:
             print(f"Agent not found for agent_id={agent_id}, session_id={session_id}")
-            await upsert_state_async(agent_id, status="stopped", context={"ended_at": datetime.now().isoformat()}, session_id=sid or session_id)
+            await upsert_state_async(agent_id, status="stopped", context={"ended_at": datetime.now(timezone.utc).isoformat()}, session_id=sid or session_id)
             return
 
         await upsert_state_async(agent.agent_id, status="stopping", session_id=sid or session_id)
@@ -314,13 +284,11 @@ async def agent_destroy(db, async_tbl, action):
         if agent_id:
             JOKE_AGENTS.pop(agent_id, None)
 
-        await upsert_state_async(agent.agent_id, status="stopped", context={"ended_at": datetime.now().isoformat()}, session_id=sid or session_id)
+        await upsert_state_async(agent.agent_id, status="stopped", context={"ended_at": datetime.now(timezone.utc).isoformat()}, session_id=sid or session_id)
         print(f"Agent {agent.agent_id}/{sid or session_id} destroyed.")
     finally:
         if action_id:
             await mark_action_processed_async(async_tbl, action_id)
-
-
 
 
 async def agent_pause(db, async_tbl, action):
@@ -339,7 +307,6 @@ async def agent_pause(db, async_tbl, action):
     finally:
         if action_id:
             await mark_action_processed_async(async_tbl, action_id)
-
 
 
 async def agent_resume(db, async_tbl, action):
@@ -385,10 +352,6 @@ async def agent_interrupt(db, async_tbl, action):
 
 
 
-
-
-
-
 ACTION_HANDLERS = {
 'create_agent': agent_create,
 'agent_destroy': agent_destroy,
@@ -398,9 +361,7 @@ ACTION_HANDLERS = {
 'environment_reload': environment_reload_handler,
 }
 
-
 IN_FLIGHT_ACTION_IDS = set()
-
 
 async def handle_actions(db, async_tbl, actions):
     for action in actions:
@@ -438,28 +399,6 @@ async def poll_lancedb_for_actions(db, async_tbl):
     return result.to_dict(orient="records")
     
 
-'''
-async def poll_lancedb_for_actions(db, async_tbl):
-    
-
-    await asyncio.sleep(5)
-    cnt = poll_lancedb_for_actions.counter
-    poll_lancedb_for_actions.counter += 1
-    if cnt % 3 == 0:
-        print("c")
-        async_tbl = await db.open_table(QUEUE_NAME)
-
-        result = await async_tbl.query().where("processed == False").to_pandas()
-        return result.to_dict(orient="records")  
-    return []
-
-poll_lancedb_for_actions.counter = 0
-'''
-
-
-
-
-            
 
 
 === ./app.py ===
@@ -582,10 +521,6 @@ class InterruptMixin:
                 ev.set()
         except Exception:
             pass
-
-
-
- 
  
     async def check_interrupt(self):
         if not self.interrupt_queue.empty():
@@ -726,6 +661,9 @@ class PersonaAgent(PauseMixin, InterruptMixin, LoopingAgentBase):
         self._force_tick = False
         super().__init__(agent_id, session_id, loop_interval=loop_interval, **kwargs)
 
+
+
+
     def initial_context(self) -> Optional[dict]:
         return {
             "agent_type": "PersonaAgent",
@@ -754,16 +692,13 @@ class PersonaAgent(PauseMixin, InterruptMixin, LoopingAgentBase):
         self.last_seen_iso = msgs[-1]["created_at"]
         last_msg_id = msgs[-1].get("message_id")
 
-
         try:
             # Merge into agent context so agent_state.context carries it
             self._merge_context({"last_seen_iso": self.last_seen_iso, "last_msg_id": last_msg_id})
         except Exception:
             pass
 
-
         last = msgs[-1]
-
 
         if last.get("author_id") == self.agent_id:
             return StepOutcome(status="info", data={"intent": {"type": "silent", "reason": "seen_self"}}, state={"conversation_id": self.conversation_id})
@@ -830,7 +765,7 @@ class PersonaAgent(PauseMixin, InterruptMixin, LoopingAgentBase):
 === ./agent_loop.py ===
 import asyncio
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Optional, Dict, Union
 
 from agent_core import AgentBase, StopMixin
@@ -862,11 +797,7 @@ class LoopingAgentBase(AgentBase, StopMixin):
         guidance_interpreter: Optional[Callable[[GuidanceInput], Awaitable[GuidanceDict]]] = None,
         persist_guidance_raw: bool = True,
         persist_guidance_normalized: bool = True,
-
-
-
     ):
-        
         super().__init__(agent_id)
         self.session_id = session_id
         self._state_updater = state_updater
@@ -1102,7 +1033,7 @@ class LoopingAgentBase(AgentBase, StopMixin):
         finally:
             await self._state_update(
                 status="stopped",
-                context={"ended_at": datetime.now().isoformat(), **self._context_snapshot()},
+                context={"ended_at": datetime.now(timezone.utc).isoformat(), **self._context_snapshot()},
             )
 
     async def _append_step(self, step: int, outcome: StepOutcome, guidance: Optional[dict]):
@@ -1122,12 +1053,6 @@ class LoopingAgentBase(AgentBase, StopMixin):
             )
         except Exception as e:
             print(f"{self.__class__.__name__} {self.agent_id}: steps_appender error: {e}")
-
-
-
-
-
-
 
 
 
@@ -2439,16 +2364,16 @@ def _normalize_rows(df):
     return out
 
 def list_agent_steps(
-*,
-session_id: str | None = None,
-agent_id: str | None = None,
-min_iteration: int | None = None,
-max_iteration: int | None = None,
-since_created_at: str | None = None,
-status: str | None = None,
-limit: int = 100,
-offset: int = 0,
-order: str = "asc",  # "asc" or "desc" by iteration
+    *,
+    session_id: str | None = None,
+    agent_id: str | None = None,
+    min_iteration: int | None = None,
+    max_iteration: int | None = None,
+    since_created_at: str | None = None,
+    status: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+    order: str = "asc",  # "asc" or "desc" by iteration
 ):
     """
     Returns a list of agent step rows filtered by the provided criteria.
@@ -2456,30 +2381,30 @@ order: str = "asc",  # "asc" or "desc" by iteration
     """
     tbl = AGENTS_DB.open_table(AGENT_STEPS_NAME)
     where = _build_where(
-    session_id=session_id,
-    agent_id=agent_id,
-    min_iteration=min_iteration,
-    max_iteration=max_iteration,
-    since_created_at=since_created_at,
-    status=status,
+        session_id=session_id,
+        agent_id=agent_id,
+        min_iteration=min_iteration,
+        max_iteration=max_iteration,
+        since_created_at=since_created_at,
+        status=status,
     )
     # LanceDB doesn't support offset directly; fetch a window and slice in pandas.
     fetch_n = max(limit + offset, limit)
     q = tbl.search()
     if where:
         q = q.where(where)
-        # Fetch to pandas then sort and slice
-        df = q.limit(fetch_n).to_pandas()
-        if df is None or df.empty:
-            return []
-    # Order by iteration; created_at is a tiebreaker
-        ascending = (order.lower() != "desc")
-        df = df.sort_values(by=["iteration", "created_at"], ascending=[ascending, ascending])
-        if offset:
-            df = df.iloc[offset:]
-        if limit:
-            df = df.iloc[:limit]
-        return _normalize_rows(df)
+    # Fetch to pandas then sort and slice
+    df = q.limit(fetch_n).to_pandas()
+    if df is None or df.empty:
+        return []
+# Order by iteration; created_at is a tiebreaker
+    ascending = (order.lower() != "desc")
+    df = df.sort_values(by=["iteration", "created_at"], ascending=[ascending, ascending])
+    if offset:
+        df = df.iloc[offset:]
+    if limit:
+        df = df.iloc[:limit]
+    return _normalize_rows(df)
 
 def list_agent_steps_since_iteration(
     *,
@@ -2601,9 +2526,9 @@ def delete_agent_config(agent_id):
     count = tbl.delete(where=f"agent_id == '{agent_id}'")
     print(f"Deleted {count} AgentConfig record(s) for {agent_id}.")
 
-def list_agent_configs():
+def list_agent_configs(agent_type="JokeAgent"):
     tbl = AGENTS_DB.open_table(AGENTS_CONFIG_NAME)
-    df = tbl.to_pandas()
+    df = tbl.search().where(f"agent_type = '{agent_type}'").to_pandas()
     if df.empty:
         print("No agent configs found.")
         return []
@@ -2636,7 +2561,7 @@ async def append_step_async(agent_id: str, iteration: int, **fields):
 
 import lancedb
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from schemas import AGENTS_URI, QUEUE_NAME
 
@@ -2663,7 +2588,7 @@ def create_action(
     record = {
         "action_id": action_id or str(uuid.uuid4()),
         "type": action_type,
-        "created_at": created_at or datetime.now().isoformat(),
+        "created_at": created_at or datetime.now(timezone.utc).isoformat(),
         "actor": actor,
         "processed": processed,
         "urgency": urgency,
@@ -3101,6 +3026,12 @@ def create_conversation_schemas():
     AGENTS_DB.create_table(CONVERSATIONS_NAME, schema=CONVERSATIONS_SCHEMA)
     AGENTS_DB.create_table(MESSAGES_NAME, schema=MESSAGES_SCHEMA)
     AGENTS_DB.create_table(PARTICIPANTS_NAME, schema=PARTICIPANTS_SCHEMA)
+
+
+def delete_conversation_schemas():
+    AGENTS_DB.drop_table(CONVERSATIONS_NAME)
+    AGENTS_DB.drop_table(MESSAGES_NAME)
+    AGENTS_DB.drop_table(PARTICIPANTS_NAME)
 
 # Optionally call from create_all_schemas()
 
